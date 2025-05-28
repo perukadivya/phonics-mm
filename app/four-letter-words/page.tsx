@@ -6,6 +6,9 @@ import { Button } from "@/components/ui/button"
 import { Progress } from "@/components/ui/progress"
 import { Volume2, Star, ArrowLeft, ArrowRight, Home } from "lucide-react"
 import Link from "next/link"
+import { useSession } from "next-auth/react"
+import TaskNavButtons from "@/components/ui/task-nav-buttons"
+import type { UserProgress } from "@/lib/stages"
 
 const words = [
   { word: "BOOK", sounds: ["B", "OO", "K"], emoji: "📚", meaning: "Something you read!" },
@@ -33,14 +36,48 @@ export default function FourLetterWordsPage() {
   const [matchingPairs, setMatchingPairs] = useState<Array<{ word: string; emoji: string; matched: boolean }>>([])
   const [selectedCard, setSelectedCard] = useState<number | null>(null)
 
+  const { status: sessionStatus } = useSession(); // Removed 'data: session'
+  const isAuthenticated = sessionStatus === "authenticated";
+  const [userProgressData, setUserProgressData] = useState<UserProgress | null>(null);
+  const [isLoadingProgress, setIsLoadingProgress] = useState(true);
+
   const currentWord = words[currentIndex]
 
   useEffect(() => {
-    const saved = localStorage.getItem("completed-four-letter-words")
-    if (saved) {
-      setCompletedWords(new Set(JSON.parse(saved)))
+    // Load completed items for this stage (local state for UI)
+    const savedCompleted = localStorage.getItem("completed-four-letter-words");
+    if (savedCompleted) {
+      setCompletedWords(new Set(JSON.parse(savedCompleted)));
     }
-  }, [])
+
+    // Load overall user progress for navigation and unlock logic
+    if (isAuthenticated) {
+      setIsLoadingProgress(true);
+      fetch("/api/progress")
+        .then((res) => {
+          if (!res.ok) throw new Error("Failed to fetch progress");
+          return res.json();
+        })
+        .then((data) => {
+          setUserProgressData({
+            letters: data.letters_progress ?? 0,
+            threeLetterWords: data.three_letter_words_progress ?? 0,
+            fourLetterWords: data.four_letter_words_progress ?? 0,
+            fiveLetterWords: data.five_letter_words_progress ?? 0,
+            sentences: data.sentences_progress ?? 0,
+            totalStickers: data.total_stickers ?? 0,
+            currentStreak: data.current_streak ?? 0,
+          });
+        })
+        .catch((error) => {
+          console.error("Error fetching user progress for 4-letter page:", error);
+          setUserProgressData(null); 
+        })
+        .finally(() => setIsLoadingProgress(false));
+    } else {
+      setIsLoadingProgress(false);
+    }
+  }, [isAuthenticated]);
 
   useEffect(() => {
     if (gameMode === "match") {
@@ -128,13 +165,55 @@ export default function FourLetterWordsPage() {
     localStorage.setItem("completed-four-letter-words", JSON.stringify([...newCompleted]))
 
     // Update overall progress
-    const progress = JSON.parse(localStorage.getItem("phonics-progress") || "{}")
-    progress.fourLetterWords = newCompleted.size
-    progress.totalStickers = (progress.totalStickers || 0) + 1
-    localStorage.setItem("phonics-progress", JSON.stringify(progress))
+    const newFourLetterWordsProgressCount = newCompleted.size;
+    const stickersEarned = 1;
 
-    setShowSticker(true)
-    setTimeout(() => setShowSticker(false), 2000)
+    if (isAuthenticated) {
+      const currentProgressForAPI = userProgressData || {
+        letters: 0, threeLetterWords: 0, fourLetterWords: 0, fiveLetterWords: 0, sentences: 0, totalStickers: 0, currentStreak: 0
+      };
+      
+      const updatedProgressPayload = {
+        letters_progress: currentProgressForAPI.letters,
+        three_letter_words_progress: currentProgressForAPI.threeLetterWords,
+        four_letter_words_progress: Math.max(currentProgressForAPI.fourLetterWords, newFourLetterWordsProgressCount),
+        five_letter_words_progress: currentProgressForAPI.fiveLetterWords,
+        sentences_progress: currentProgressForAPI.sentences,
+        total_stickers: (currentProgressForAPI.totalStickers || 0) + stickersEarned,
+      };
+
+      fetch('/api/progress', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(updatedProgressPayload),
+      })
+      .then(res => {
+        if (!res.ok) throw new Error('Failed to save progress');
+        return res.json();
+      })
+      .then(savedData => {
+        setUserProgressData({
+            letters: savedData.letters_progress ?? 0,
+            threeLetterWords: savedData.three_letter_words_progress ?? 0,
+            fourLetterWords: savedData.four_letter_words_progress ?? 0,
+            fiveLetterWords: savedData.five_letter_words_progress ?? 0,
+            sentences: savedData.sentences_progress ?? 0,
+            totalStickers: savedData.total_stickers ?? 0,
+            currentStreak: savedData.current_streak ?? 0,
+        });
+        console.log("Progress updated via API for 4-letter page.");
+      })
+      .catch(error => console.error("Error updating API progress from 4-letter page:", error));
+    } else {
+      const localOverallProgress = JSON.parse(localStorage.getItem("phonics-progress") || "{}");
+      localOverallProgress.fourLetterWords = newFourLetterWordsProgressCount;
+      localOverallProgress.totalStickers = (localOverallProgress.totalStickers || 0) + stickersEarned;
+      localStorage.setItem("phonics-progress", JSON.stringify(localOverallProgress));
+      console.log("Progress updated in localStorage for unauthenticated user (4-letter page).");
+    }
+
+    setShowSticker(true);
+    setTimeout(() => setShowSticker(false), 2000);
   }
 
   const nextWord = () => {
@@ -358,6 +437,13 @@ export default function FourLetterWordsPage() {
             <div className="text-8xl animate-bounce">⭐</div>
           </div>
         )}
+
+        <TaskNavButtons 
+          currentStageId="four-letter" 
+          userProgressData={userProgressData}
+          isAuthenticated={isAuthenticated}
+          isLoadingProgress={isLoadingProgress}
+        />
       </div>
     </div>
   )

@@ -6,7 +6,10 @@ import { Button } from "@/components/ui/button"
 import { Progress } from "@/components/ui/progress"
 import { Volume2, Star, ArrowLeft, ArrowRight, Home, RefreshCw, Sparkles } from "lucide-react"
 import Link from "next/link"
+import { useSession } from "next-auth/react"
 import type { GeneratedLetter } from "@/lib/ai-generator"
+import TaskNavButtons from "@/components/ui/task-nav-buttons"
+import type { UserProgress } from "@/lib/stages" // Assuming UserProgress is exported from lib/stages
 
 const defaultLetters = [
   { letter: "A", sound: "ah", word: "Apple", emoji: "🍎" },
@@ -23,15 +26,52 @@ export default function LettersPage() {
   const [letters, setLetters] = useState<GeneratedLetter[]>(defaultLetters)
   const [isGenerating, setIsGenerating] = useState(false)
 
+  const { status: sessionStatus } = useSession(); // Removed 'data: session'
+  const isAuthenticated = sessionStatus === "authenticated";
+  const [userProgressData, setUserProgressData] = useState<UserProgress | null>(null);
+  const [isLoadingProgress, setIsLoadingProgress] = useState(true);
+
   const currentLetter = letters[currentIndex]
 
   useEffect(() => {
-    const saved = localStorage.getItem("completed-letters")
-    if (saved) {
-      setCompletedLetters(new Set(JSON.parse(saved)))
+    // Load completed letters for this stage (local state for UI)
+    const savedCompleted = localStorage.getItem("completed-letters");
+    if (savedCompleted) {
+      setCompletedLetters(new Set(JSON.parse(savedCompleted)));
     }
-  }, [])
 
+    // Load overall user progress for navigation and unlock logic
+    if (isAuthenticated) {
+      setIsLoadingProgress(true);
+      fetch("/api/progress")
+        .then((res) => {
+          if (!res.ok) throw new Error("Failed to fetch progress");
+          return res.json();
+        })
+        .then((data) => {
+          setUserProgressData({
+            letters: data.letters_progress ?? 0,
+            threeLetterWords: data.three_letter_words_progress ?? 0,
+            fourLetterWords: data.four_letter_words_progress ?? 0,
+            fiveLetterWords: data.five_letter_words_progress ?? 0,
+            sentences: data.sentences_progress ?? 0,
+            totalStickers: data.total_stickers ?? 0,
+            currentStreak: data.current_streak ?? 0,
+          });
+        })
+        .catch((error) => {
+          console.error("Error fetching user progress for letters page:", error);
+          setUserProgressData(null); // Fallback or use default
+        })
+        .finally(() => setIsLoadingProgress(false));
+    } else {
+      setIsLoadingProgress(false); // Not authenticated, no progress to load from API
+      // Optionally load from localStorage for unauthenticated user's overall progress if needed by TaskNavButtons
+      // For now, TaskNavButtons primarily relies on isAuthenticated and progress for unlocking.
+      // If unauthenticated, TaskNavButtons will likely show nothing or only public links.
+    }
+  }, [isAuthenticated]);
+  
   const generateNewContent = async () => {
     setIsGenerating(true)
     try {
@@ -99,16 +139,69 @@ export default function LettersPage() {
   const markComplete = () => {
     const newCompleted = new Set(completedLetters)
     newCompleted.add(currentIndex)
-    setCompletedLetters(newCompleted)
-    localStorage.setItem("completed-letters", JSON.stringify([...newCompleted]))
+    setCompletedLetters(newCompleted);
+    localStorage.setItem("completed-letters", JSON.stringify([...newCompleted])); // Local UI state
 
-    const progress = JSON.parse(localStorage.getItem("phonics-progress") || "{}")
-    progress.letters = newCompleted.size
-    progress.totalStickers = (progress.totalStickers || 0) + 1
-    localStorage.setItem("phonics-progress", JSON.stringify(progress))
+    const newLettersProgressCount = newCompleted.size;
+    const stickersEarned = 1;
 
-    setShowSticker(true)
-    setTimeout(() => setShowSticker(false), 2000)
+    if (isAuthenticated) {
+      // Update progress via API
+      const currentProgressForAPI = userProgressData || {
+        letters: 0, threeLetterWords: 0, fourLetterWords: 0, fiveLetterWords: 0, sentences: 0, totalStickers: 0, currentStreak: 0
+      };
+      
+      const updatedProgressPayload = {
+        // Map UserProgress (camelCase) to API's expected snake_case
+        letters_progress: Math.max(currentProgressForAPI.letters, newLettersProgressCount),
+        three_letter_words_progress: currentProgressForAPI.threeLetterWords,
+        four_letter_words_progress: currentProgressForAPI.fourLetterWords,
+        five_letter_words_progress: currentProgressForAPI.fiveLetterWords,
+        sentences_progress: currentProgressForAPI.sentences,
+        total_stickers: (currentProgressForAPI.totalStickers || 0) + stickersEarned,
+        // current_streak and last_played_date can be updated here or by API
+      };
+
+      fetch('/api/progress', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(updatedProgressPayload),
+      })
+      .then(res => {
+        if (!res.ok) throw new Error('Failed to save progress');
+        return res.json();
+      })
+      .then(savedData => {
+        // Update local userProgressData state with the saved data from API (snake_case to camelCase)
+        setUserProgressData({
+            letters: savedData.letters_progress ?? 0,
+            threeLetterWords: savedData.three_letter_words_progress ?? 0,
+            fourLetterWords: savedData.four_letter_words_progress ?? 0,
+            fiveLetterWords: savedData.five_letter_words_progress ?? 0,
+            sentences: savedData.sentences_progress ?? 0,
+            totalStickers: savedData.total_stickers ?? 0,
+            currentStreak: savedData.current_streak ?? 0,
+        });
+        console.log("Progress updated via API for letters page.");
+      })
+      .catch(error => {
+        console.error("Error updating progress via API from letters page:", error);
+        // Fallback: update localStorage for authenticated user if API fails?
+        // This could lead to sync issues if not handled carefully.
+        // For now, just log the error. The local UI `completedLetters` is already updated.
+      });
+
+    } else {
+      // Unauthenticated: Use localStorage for overall progress
+      const localOverallProgress = JSON.parse(localStorage.getItem("phonics-progress") || "{}");
+      localOverallProgress.letters = newLettersProgressCount;
+      localOverallProgress.totalStickers = (localOverallProgress.totalStickers || 0) + stickersEarned;
+      localStorage.setItem("phonics-progress", JSON.stringify(localOverallProgress));
+      console.log("Progress updated in localStorage for unauthenticated user (letters page).");
+    }
+
+    setShowSticker(true);
+    setTimeout(() => setShowSticker(false), 2000);
   }
 
   const nextLetter = () => {
@@ -231,6 +324,13 @@ export default function LettersPage() {
             <div className="text-8xl animate-bounce">⭐</div>
           </div>
         )}
+
+        <TaskNavButtons 
+          currentStageId="letters" 
+          userProgressData={userProgressData}
+          isAuthenticated={isAuthenticated}
+          isLoadingProgress={isLoadingProgress}
+        />
       </div>
     </div>
   )

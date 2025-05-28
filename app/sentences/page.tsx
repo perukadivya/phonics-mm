@@ -6,6 +6,9 @@ import { Button } from "@/components/ui/button"
 import { Progress } from "@/components/ui/progress"
 import { Volume2, Star, ArrowLeft, ArrowRight, Home, Check } from "lucide-react"
 import Link from "next/link"
+import { useSession } from "next-auth/react"
+import TaskNavButtons from "@/components/ui/task-nav-buttons"
+import type { UserProgress } from "@/lib/stages"
 
 const sentences = [
   {
@@ -78,14 +81,48 @@ export default function SentencesPage() {
   const [sentenceWords, setSentenceWords] = useState<string[]>([])
   const [availableWords, setAvailableWords] = useState<string[]>([])
 
+  const { status: sessionStatus } = useSession(); // Removed 'data: session'
+  const isAuthenticated = sessionStatus === "authenticated";
+  const [userProgressData, setUserProgressData] = useState<UserProgress | null>(null);
+  const [isLoadingProgress, setIsLoadingProgress] = useState(true);
+
   const currentSentence = sentences[currentIndex]
 
   useEffect(() => {
-    const saved = localStorage.getItem("completed-sentences")
-    if (saved) {
-      setCompletedSentences(new Set(JSON.parse(saved)))
+    // Load completed items for this stage (local state for UI)
+    const savedCompleted = localStorage.getItem("completed-sentences");
+    if (savedCompleted) {
+      setCompletedSentences(new Set(JSON.parse(savedCompleted)));
     }
-  }, [])
+
+    // Load overall user progress for navigation and unlock logic
+    if (isAuthenticated) {
+      setIsLoadingProgress(true);
+      fetch("/api/progress")
+        .then((res) => {
+          if (!res.ok) throw new Error("Failed to fetch progress");
+          return res.json();
+        })
+        .then((data) => {
+          setUserProgressData({
+            letters: data.letters_progress ?? 0,
+            threeLetterWords: data.three_letter_words_progress ?? 0,
+            fourLetterWords: data.four_letter_words_progress ?? 0,
+            fiveLetterWords: data.five_letter_words_progress ?? 0,
+            sentences: data.sentences_progress ?? 0,
+            totalStickers: data.total_stickers ?? 0,
+            currentStreak: data.current_streak ?? 0,
+          });
+        })
+        .catch((error) => {
+          console.error("Error fetching user progress for sentences page:", error);
+          setUserProgressData(null); 
+        })
+        .finally(() => setIsLoadingProgress(false));
+    } else {
+      setIsLoadingProgress(false);
+    }
+  }, [isAuthenticated]);
 
   useEffect(() => {
     if (gameMode === "build") {
@@ -116,13 +153,55 @@ export default function SentencesPage() {
     localStorage.setItem("completed-sentences", JSON.stringify([...newCompleted]))
 
     // Update overall progress
-    const progress = JSON.parse(localStorage.getItem("phonics-progress") || "{}")
-    progress.sentences = newCompleted.size
-    progress.totalStickers = (progress.totalStickers || 0) + 1
-    localStorage.setItem("phonics-progress", JSON.stringify(progress))
+    const newSentencesProgressCount = newCompleted.size;
+    const stickersEarned = 1;
 
-    setShowSticker(true)
-    setTimeout(() => setShowSticker(false), 2000)
+    if (isAuthenticated) {
+      const currentProgressForAPI = userProgressData || {
+        letters: 0, threeLetterWords: 0, fourLetterWords: 0, fiveLetterWords: 0, sentences: 0, totalStickers: 0, currentStreak: 0
+      };
+      
+      const updatedProgressPayload = {
+        letters_progress: currentProgressForAPI.letters,
+        three_letter_words_progress: currentProgressForAPI.threeLetterWords,
+        four_letter_words_progress: currentProgressForAPI.fourLetterWords,
+        five_letter_words_progress: currentProgressForAPI.fiveLetterWords,
+        sentences_progress: Math.max(currentProgressForAPI.sentences, newSentencesProgressCount),
+        total_stickers: (currentProgressForAPI.totalStickers || 0) + stickersEarned,
+      };
+
+      fetch('/api/progress', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(updatedProgressPayload),
+      })
+      .then(res => {
+        if (!res.ok) throw new Error('Failed to save progress');
+        return res.json();
+      })
+      .then(savedData => {
+        setUserProgressData({
+            letters: savedData.letters_progress ?? 0,
+            threeLetterWords: savedData.three_letter_words_progress ?? 0,
+            fourLetterWords: savedData.four_letter_words_progress ?? 0,
+            fiveLetterWords: savedData.five_letter_words_progress ?? 0,
+            sentences: savedData.sentences_progress ?? 0,
+            totalStickers: savedData.total_stickers ?? 0,
+            currentStreak: savedData.current_streak ?? 0,
+        });
+        console.log("Progress updated via API for sentences page.");
+      })
+      .catch(error => console.error("Error updating API progress from sentences page:", error));
+    } else {
+      const localOverallProgress = JSON.parse(localStorage.getItem("phonics-progress") || "{}");
+      localOverallProgress.sentences = newSentencesProgressCount;
+      localOverallProgress.totalStickers = (localOverallProgress.totalStickers || 0) + stickersEarned;
+      localStorage.setItem("phonics-progress", JSON.stringify(localOverallProgress));
+      console.log("Progress updated in localStorage for unauthenticated user (sentences page).");
+    }
+
+    setShowSticker(true);
+    setTimeout(() => setShowSticker(false), 2000);
   }
 
   const nextSentence = () => {
@@ -355,6 +434,13 @@ export default function SentencesPage() {
             <div className="text-8xl animate-bounce">⭐</div>
           </div>
         )}
+
+        <TaskNavButtons 
+          currentStageId="sentences" 
+          userProgressData={userProgressData}
+          isAuthenticated={isAuthenticated}
+          isLoadingProgress={isLoadingProgress}
+        />
       </div>
     </div>
   )

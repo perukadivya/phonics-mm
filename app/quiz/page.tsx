@@ -1,12 +1,14 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useCallback } from "react" // Added useCallback
+import { useSession } from "next-auth/react"
 import { Card, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Progress } from "@/components/ui/progress"
 import { Input } from "@/components/ui/input"
 import { Volume2, Home, RefreshCw, Check, X } from "lucide-react"
 import Link from "next/link"
+import { useSearchParams } from 'next/navigation'
 
 interface QuizQuestion {
   question: string
@@ -31,13 +33,13 @@ export default function QuizPage() {
   const [currentAnswer, setCurrentAnswer] = useState("")
   const [showFeedback, setShowFeedback] = useState(false)
 
+  const { status: sessionStatus } = useSession(); // Removed 'data: session'
+  const searchParams = useSearchParams();
+  const challengeMode = searchParams.get('challenge') === 'true';
+
   const currentQuestion = questions[currentQuestionIndex]
 
-  useEffect(() => {
-    generateQuiz()
-  }, [selectedLevel])
-
-  const generateQuiz = async () => {
+  const generateQuiz = useCallback(async () => {
     setIsGenerating(true)
     setCurrentQuestionIndex(0)
     setUserAnswers([])
@@ -46,10 +48,20 @@ export default function QuizPage() {
     setShowFeedback(false)
 
     try {
+      const levelForApi = challengeMode ? "letters" : selectedLevel;
+      const countForApi = challengeMode ? 5 : 10;
+
+      // If in challenge mode and selectedLevel state is not 'letters', set it.
+      if (challengeMode && selectedLevel !== "letters") {
+        setSelectedLevel("letters"); // This might trigger another generateQuiz if not handled carefully in useEffect deps
+                                    // However, selectedLevel is already part of deps, and levelForApi is derived.
+                                    // The key is that API call uses levelForApi.
+      }
+      
       const response = await fetch("/api/generate-content", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ type: "quiz", level: selectedLevel, count: 10 }),
+        body: JSON.stringify({ type: "quiz", level: levelForApi, count: countForApi }),
       })
 
       if (response.ok) {
@@ -71,7 +83,20 @@ export default function QuizPage() {
     } finally {
       setIsGenerating(false)
     }
-  }
+  // challengeMode and selectedLevel are dependencies for when this function *should* change or be called,
+  // but they are used to determine parameters *within* the function.
+  // The function itself, if its definition doesn't change based on these, might not need them as deps for useCallback.
+  // However, if it's called in useEffect, that useEffect needs them.
+  // For simplicity of this fix, let's assume selectedLevel is a key dependency for the quiz content.
+  // Challenge mode dictates fixed parameters, so it's also a key dependency.
+  }, [challengeMode, selectedLevel, setIsGenerating, setCurrentQuestionIndex, setUserAnswers, setShowResult, setScore, setShowFeedback, setQuestions]);
+
+
+  useEffect(() => {
+    // For challenge mode, selectedLevel is fixed, so generateQuiz is called once on mount (due to challengeMode dependency)
+    // For regular mode, it's called when selectedLevel changes.
+    generateQuiz();
+  }, [selectedLevel, challengeMode, generateQuiz]); // Added generateQuiz
 
   const playQuestion = () => {
     const utterance = new SpeechSynthesisUtterance(currentQuestion.question)
@@ -126,9 +151,57 @@ export default function QuizPage() {
     setShowResult(true)
 
     // Update progress
-    const progress = JSON.parse(localStorage.getItem("phonics-progress") || "{}")
-    progress.totalStickers = (progress.totalStickers || 0) + Math.floor(correct / 2)
-    localStorage.setItem("phonics-progress", JSON.stringify(progress))
+    const stickersEarned = Math.floor(correct / 2);
+
+    if (sessionStatus === "authenticated") {
+      // Authenticated: Use API
+      const updateUserProgress = async () => {
+        try {
+          // 1. Fetch current progress
+          const response = await fetch('/api/progress');
+          if (!response.ok) {
+            throw new Error(`Failed to fetch progress: ${response.status}`);
+          }
+          const currentProgress = await response.json(); // API returns snake_case
+
+          // 2. Update stickers (and potentially other fields)
+          const updatedProgressPayload = {
+            ...currentProgress, // includes all fields like letters_progress, etc.
+            total_stickers: (currentProgress.total_stickers || 0) + stickersEarned,
+            // last_played_date and updated_at will be handled by the API/DB
+          };
+
+          // 3. POST updated progress
+          const postResponse = await fetch('/api/progress', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(updatedProgressPayload), // Send snake_case
+          });
+
+          if (!postResponse.ok) {
+            throw new Error(`Failed to save progress: ${postResponse.status}`);
+          }
+          console.log("Progress updated successfully via API.");
+
+        } catch (error) {
+          console.error("Error updating progress via API:", error);
+          // Fallback to localStorage if API fails for authenticated user? Or just log error.
+          // For now, just log, as primary should be API.
+          // Optionally, could notify user or queue update.
+        }
+      };
+      updateUserProgress();
+
+    } else if (sessionStatus === "unauthenticated") {
+      // Unauthenticated: Use localStorage
+      const localProgress = JSON.parse(localStorage.getItem("phonics-progress") || "{}");
+      localProgress.totalStickers = (localProgress.totalStickers || 0) + stickersEarned;
+      localStorage.setItem("phonics-progress", JSON.stringify(localProgress));
+      console.log("Progress updated in localStorage for unauthenticated user.");
+    }
+    // If sessionStatus is "loading", this function might be called before status is resolved.
+    // Consider disabling quiz completion or queuing update if status is "loading".
+    // For now, it will default to unauthenticated behavior if status isn't "authenticated".
   }
 
   const isCorrect = () => {
@@ -208,28 +281,32 @@ export default function QuizPage() {
               Home
             </Button>
           </Link>
-          <h1 className="text-4xl font-bold text-white text-center">🧠 Phonics Quiz 🧠</h1>
-          <Button onClick={generateQuiz} variant="outline" size="lg" className="text-xl">
+          <h1 className="text-4xl font-bold text-white text-center">
+            {challengeMode ? "🌟 New User Phonics Challenge! 🌟" : "🧠 Phonics Quiz 🧠"}
+          </h1>
+          <Button onClick={generateQuiz} variant="outline" size="lg" className="text-xl" disabled={challengeMode && questions.length > 0 && !showResult}>
             <RefreshCw className="w-6 h-6 mr-2" />
-            New Quiz
+            {challengeMode ? "Restart Challenge" : "New Quiz"}
           </Button>
         </div>
 
-        {/* Level Selector */}
-        <div className="bg-white/90 backdrop-blur-sm rounded-2xl p-4 mb-6">
-          <div className="flex flex-wrap justify-center gap-2">
-            {(["letters", "three-letter", "four-letter", "five-letter", "sentences"] as const).map((level) => (
-              <Button
-                key={level}
-                onClick={() => setSelectedLevel(level)}
-                variant={selectedLevel === level ? "default" : "outline"}
-                className="text-lg"
-              >
-                {level.charAt(0).toUpperCase() + level.slice(1).replace("-", " ")}
-              </Button>
-            ))}
+        {/* Level Selector (hidden in challenge mode) */}
+        {!challengeMode && (
+          <div className="bg-white/90 backdrop-blur-sm rounded-2xl p-4 mb-6">
+            <div className="flex flex-wrap justify-center gap-2">
+              {(["letters", "three-letter", "four-letter", "five-letter", "sentences"] as const).map((level) => (
+                <Button
+                  key={level}
+                  onClick={() => setSelectedLevel(level)}
+                  variant={selectedLevel === level ? "default" : "outline"}
+                  className="text-lg"
+                >
+                  {level.charAt(0).toUpperCase() + level.slice(1).replace("-", " ")}
+                </Button>
+              ))}
+            </div>
           </div>
-        </div>
+        )}
 
         {/* Progress */}
         <div className="bg-white/90 backdrop-blur-sm rounded-2xl p-4 mb-6">

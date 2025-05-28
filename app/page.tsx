@@ -1,6 +1,7 @@
 "use client"
 
 import { useState, useEffect } from "react"
+import { useSession, signIn, signOut } from "next-auth/react"
 import { Card, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Progress } from "@/components/ui/progress"
@@ -28,12 +29,53 @@ export default function HomePage() {
     currentStreak: 0,
   })
 
+  const { data: session, status } = useSession()
+
   useEffect(() => {
-    const savedProgress = localStorage.getItem("phonics-progress")
-    if (savedProgress) {
-      setProgress(JSON.parse(savedProgress))
+    const loadProgress = async () => {
+      if (status === "authenticated") {
+        try {
+          const response = await fetch('/api/progress');
+          if (!response.ok) {
+            throw new Error(`Failed to fetch progress: ${response.status}`);
+          }
+          const dbProgress = await response.json();
+          setProgress({
+            letters: dbProgress.letters_progress ?? 0,
+            threeLetterWords: dbProgress.three_letter_words_progress ?? 0,
+            fourLetterWords: dbProgress.four_letter_words_progress ?? 0,
+            fiveLetterWords: dbProgress.five_letter_words_progress ?? 0,
+            sentences: dbProgress.sentences_progress ?? 0,
+            totalStickers: dbProgress.total_stickers ?? 0,
+            currentStreak: dbProgress.current_streak ?? 0,
+          });
+        } catch (error) {
+          console.error("Error fetching progress from API:", error);
+          // Fallback or set default progress if API fetch fails
+          const localSavedProgress = localStorage.getItem("phonics-progress");
+          if (localSavedProgress) {
+            console.log("Falling back to localStorage progress for authenticated user due to API error.");
+            setProgress(JSON.parse(localSavedProgress));
+          } else {
+            // Set to default if no local storage either
+            setProgress({ letters: 0, threeLetterWords: 0, fourLetterWords: 0, fiveLetterWords: 0, sentences: 0, totalStickers: 0, currentStreak: 0 });
+          }
+        }
+      } else if (status === "unauthenticated") {
+        const localSavedProgress = localStorage.getItem("phonics-progress");
+        if (localSavedProgress) {
+          setProgress(JSON.parse(localSavedProgress));
+        } else {
+            setProgress({ letters: 0, threeLetterWords: 0, fourLetterWords: 0, fiveLetterWords: 0, sentences: 0, totalStickers: 0, currentStreak: 0 });
+        }
+      }
+      // If status is "loading", wait for session to resolve.
+    };
+
+    if (status !== "loading") {
+      loadProgress();
     }
-  }, [])
+  }, [status]);
 
   const stages = [
     {
@@ -91,22 +133,44 @@ export default function HomePage() {
       title: "AI Quiz Challenge",
       description: "Test your phonics skills!",
       icon: "🧠",
-      progress: 0,
-      total: 1,
-      href: "/quiz",
-      unlocked: progress.letters >= 5,
+      progress: 0, // Progress for this card might be handled differently if it's a one-time challenge
+      total: 1,   // or represents completion of the challenge itself.
+      href: "/quiz?challenge=true", // Link to the new user challenge mode
+      unlocked: progress.letters >= 5, // Keep existing unlock logic or adjust as needed
     },
   ]
 
   const totalProgress = stages.slice(0, 5).reduce((acc, stage) => acc + stage.progress, 0)
   const totalPossible = stages.slice(0, 5).reduce((acc, stage) => acc + stage.total, 0)
   const overallProgress = (totalProgress / totalPossible) * 100
+  // const { data: session, status } = useSession() // already defined above
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-purple-400 via-pink-400 to-yellow-400 p-4">
       <div className="max-w-4xl mx-auto">
-        {/* Header */}
+        {/* Auth Status and Header */}
         <div className="text-center mb-8">
+          <div className="mb-4 p-2 rounded-lg bg-white/20 backdrop-blur-sm inline-block">
+            {status === "loading" && <p className="text-white">Loading session...</p>}
+            {status === "unauthenticated" && (
+              <Button onClick={() => signIn("google")} className="bg-blue-500 hover:bg-blue-600 text-white font-bold py-3 px-6 rounded-lg text-lg shadow-md">
+                Sign In with Google
+              </Button>
+            )}
+            {status === "authenticated" && session?.user && (
+              <div className="flex flex-col items-center gap-2">
+                <p className="text-xl text-white">
+                  Welcome, {session.user.name || session.user.email}!
+                  {session.user.image && (
+                    <img src={session.user.image} alt="User avatar" className="inline-block w-8 h-8 rounded-full ml-2" />
+                  )}
+                </p>
+                <Button onClick={() => signOut()} className="bg-red-500 hover:bg-red-600 text-white font-bold py-2 px-4 rounded-lg text-md shadow-md">
+                  Sign Out
+                </Button>
+              </div>
+            )}
+          </div>
           <h1 className="text-6xl font-bold text-white mb-4 drop-shadow-lg">🎵 Phonics Fun! 🎵</h1>
           <div className="bg-white/90 backdrop-blur-sm rounded-3xl p-6 shadow-xl">
             <div className="flex items-center justify-center gap-4 mb-4">
