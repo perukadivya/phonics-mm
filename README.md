@@ -14,7 +14,7 @@ Any changes you make to your deployed app will be automatically pushed to this r
 
 Your project is live at:
 
-**[https://vercel.com/perukadivyas-projects/v0-interactive-phonics-app](https://vercel.com/perukadivyas-projects/v0-interactive-phonics-app)**
+**[https://phonics.kprsnt.in](https://phonics.kprsnt.in)**
 
 ## Build your app
 
