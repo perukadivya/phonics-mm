@@ -4,42 +4,24 @@ import { useState, useEffect } from "react"
 import { Card, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Progress } from "@/components/ui/progress"
-import { Volume2, Star, ArrowLeft, ArrowRight, Home } from "lucide-react"
+import { Volume2, Star, ArrowLeft, ArrowRight, Home, RefreshCw, Sparkles } from "lucide-react"
 import Link from "next/link"
+import type { GeneratedLetter } from "@/lib/ai-generator"
 
-const letters = [
+const defaultLetters = [
   { letter: "A", sound: "ah", word: "Apple", emoji: "🍎" },
   { letter: "B", sound: "buh", word: "Ball", emoji: "⚽" },
   { letter: "C", sound: "kuh", word: "Cat", emoji: "🐱" },
   { letter: "D", sound: "duh", word: "Dog", emoji: "🐶" },
   { letter: "E", sound: "eh", word: "Egg", emoji: "🥚" },
-  { letter: "F", sound: "fuh", word: "Fish", emoji: "🐟" },
-  { letter: "G", sound: "guh", word: "Goat", emoji: "🐐" },
-  { letter: "H", sound: "huh", word: "Hat", emoji: "👒" },
-  { letter: "I", sound: "ih", word: "Ice", emoji: "🧊" },
-  { letter: "J", sound: "juh", word: "Jam", emoji: "🍯" },
-  { letter: "K", sound: "kuh", word: "Kite", emoji: "🪁" },
-  { letter: "L", sound: "luh", word: "Lion", emoji: "🦁" },
-  { letter: "M", sound: "muh", word: "Moon", emoji: "🌙" },
-  { letter: "N", sound: "nuh", word: "Nest", emoji: "🪺" },
-  { letter: "O", sound: "oh", word: "Orange", emoji: "🍊" },
-  { letter: "P", sound: "puh", word: "Pig", emoji: "🐷" },
-  { letter: "Q", sound: "kwuh", word: "Queen", emoji: "👸" },
-  { letter: "R", sound: "ruh", word: "Robot", emoji: "🤖" },
-  { letter: "S", sound: "sss", word: "Sun", emoji: "☀️" },
-  { letter: "T", sound: "tuh", word: "Tree", emoji: "🌳" },
-  { letter: "U", sound: "uh", word: "Umbrella", emoji: "☂️" },
-  { letter: "V", sound: "vuh", word: "Van", emoji: "🚐" },
-  { letter: "W", sound: "wuh", word: "Water", emoji: "💧" },
-  { letter: "X", sound: "ks", word: "Box", emoji: "📦" },
-  { letter: "Y", sound: "yuh", word: "Yellow", emoji: "💛" },
-  { letter: "Z", sound: "zzz", word: "Zebra", emoji: "🦓" },
 ]
 
 export default function LettersPage() {
   const [currentIndex, setCurrentIndex] = useState(0)
   const [completedLetters, setCompletedLetters] = useState<Set<number>>(new Set())
   const [showSticker, setShowSticker] = useState(false)
+  const [letters, setLetters] = useState<GeneratedLetter[]>(defaultLetters)
+  const [isGenerating, setIsGenerating] = useState(false)
 
   const currentLetter = letters[currentIndex]
 
@@ -50,8 +32,29 @@ export default function LettersPage() {
     }
   }, [])
 
+  const generateNewContent = async () => {
+    setIsGenerating(true)
+    try {
+      const response = await fetch("/api/generate-content", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ type: "letters", count: 10 }),
+      })
+
+      if (response.ok) {
+        const { content } = await response.json()
+        setLetters([...defaultLetters, ...content])
+        setCurrentIndex(0)
+        setCompletedLetters(new Set())
+      }
+    } catch (error) {
+      console.error("Failed to generate content:", error)
+    } finally {
+      setIsGenerating(false)
+    }
+  }
+
   const playSound = () => {
-    // Use actual phonetic sounds instead of written symbols
     const phoneticSounds: { [key: string]: string } = {
       A: "ah",
       B: "buh",
@@ -81,7 +84,7 @@ export default function LettersPage() {
       Z: "zzz",
     }
 
-    const utterance = new SpeechSynthesisUtterance(phoneticSounds[currentLetter.letter] || currentLetter.letter)
+    const utterance = new SpeechSynthesisUtterance(phoneticSounds[currentLetter.letter] || currentLetter.sound)
     utterance.rate = 0.6
     utterance.pitch = 1.2
     speechSynthesis.speak(utterance)
@@ -99,7 +102,6 @@ export default function LettersPage() {
     setCompletedLetters(newCompleted)
     localStorage.setItem("completed-letters", JSON.stringify([...newCompleted]))
 
-    // Update overall progress
     const progress = JSON.parse(localStorage.getItem("phonics-progress") || "{}")
     progress.letters = newCompleted.size
     progress.totalStickers = (progress.totalStickers || 0) + 1
@@ -135,7 +137,10 @@ export default function LettersPage() {
             </Button>
           </Link>
           <h1 className="text-4xl font-bold text-white text-center">🔤 Letter Sounds 🔤</h1>
-          <div className="w-24" /> {/* Spacer */}
+          <Button onClick={generateNewContent} disabled={isGenerating} variant="outline" size="lg" className="text-xl">
+            {isGenerating ? <RefreshCw className="w-6 h-6 mr-2 animate-spin" /> : <Sparkles className="w-6 h-6 mr-2" />}
+            {isGenerating ? "Generating..." : "New Examples"}
+          </Button>
         </div>
 
         {/* Progress */}
@@ -153,10 +158,8 @@ export default function LettersPage() {
         <Card className="bg-white/95 shadow-2xl mb-6">
           <CardContent className="p-8 text-center">
             <div className="space-y-6">
-              {/* Letter Display */}
               <div className="text-9xl font-bold text-purple-600 mb-4">{currentLetter.letter}</div>
 
-              {/* Sound */}
               <div className="space-y-4">
                 <Button onClick={playSound} size="lg" className="text-2xl py-6 px-8 bg-green-500 hover:bg-green-600">
                   <Volume2 className="w-8 h-8 mr-3" />
@@ -164,7 +167,6 @@ export default function LettersPage() {
                 </Button>
               </div>
 
-              {/* Word Example */}
               <div className="bg-yellow-100 rounded-2xl p-6">
                 <div className="text-6xl mb-4">{currentLetter.emoji}</div>
                 <div className="text-3xl font-bold text-gray-800 mb-4">{currentLetter.word}</div>
@@ -174,7 +176,6 @@ export default function LettersPage() {
                 </Button>
               </div>
 
-              {/* Complete Button */}
               {!completedLetters.has(currentIndex) && (
                 <Button
                   onClick={markComplete}

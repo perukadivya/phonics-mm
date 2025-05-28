@@ -4,7 +4,7 @@ import { useState, useEffect } from "react"
 import { Card, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Progress } from "@/components/ui/progress"
-import { Trophy, BookOpen, Sparkles } from "lucide-react"
+import { Trophy, BookOpen, Sparkles, Brain } from "lucide-react"
 import Link from "next/link"
 
 interface UserProgress {
@@ -86,10 +86,20 @@ export default function HomePage() {
       href: "/sentences",
       unlocked: progress.fiveLetterWords >= 6,
     },
+    {
+      id: "quiz",
+      title: "AI Quiz Challenge",
+      description: "Test your phonics skills!",
+      icon: "🧠",
+      progress: 0,
+      total: 1,
+      href: "/quiz",
+      unlocked: progress.letters >= 5,
+    },
   ]
 
-  const totalProgress = stages.reduce((acc, stage) => acc + stage.progress, 0)
-  const totalPossible = stages.reduce((acc, stage) => acc + stage.total, 0)
+  const totalProgress = stages.slice(0, 5).reduce((acc, stage) => acc + stage.progress, 0)
+  const totalPossible = stages.slice(0, 5).reduce((acc, stage) => acc + stage.total, 0)
   const overallProgress = (totalProgress / totalPossible) * 100
 
   return (
@@ -131,23 +141,33 @@ export default function HomePage() {
 
                   {stage.unlocked ? (
                     <>
-                      <div className="space-y-2">
-                        <div className="flex justify-between text-sm font-semibold">
-                          <span>Progress</span>
-                          <span>
-                            {stage.progress}/{stage.total}
-                          </span>
+                      {stage.id !== "quiz" && (
+                        <div className="space-y-2">
+                          <div className="flex justify-between text-sm font-semibold">
+                            <span>Progress</span>
+                            <span>
+                              {stage.progress}/{stage.total}
+                            </span>
+                          </div>
+                          <Progress value={(stage.progress / stage.total) * 100} className="h-3" />
                         </div>
-                        <Progress value={(stage.progress / stage.total) * 100} className="h-3" />
-                      </div>
+                      )}
 
                       <Link href={stage.href}>
                         <Button
                           size="lg"
-                          className="w-full text-xl py-6 bg-gradient-to-r from-green-400 to-blue-500 hover:from-green-500 hover:to-blue-600 text-white font-bold rounded-2xl shadow-lg"
+                          className={`w-full text-xl py-6 font-bold rounded-2xl shadow-lg ${
+                            stage.id === "quiz"
+                              ? "bg-gradient-to-r from-purple-500 to-indigo-600 hover:from-purple-600 hover:to-indigo-700"
+                              : "bg-gradient-to-r from-green-400 to-blue-500 hover:from-green-500 hover:to-blue-600"
+                          } text-white`}
                         >
-                          <BookOpen className="w-6 h-6 mr-2" />
-                          Let's Learn!
+                          {stage.id === "quiz" ? (
+                            <Brain className="w-6 h-6 mr-2" />
+                          ) : (
+                            <BookOpen className="w-6 h-6 mr-2" />
+                          )}
+                          {stage.id === "quiz" ? "Take Quiz!" : "Let's Learn!"}
                         </Button>
                       </Link>
                     </>
@@ -177,6 +197,18 @@ export default function HomePage() {
             </div>
           </div>
         )}
+
+        {/* AI Features Notice */}
+        <div className="mt-8 text-center">
+          <div className="bg-gradient-to-r from-purple-500/20 to-pink-500/20 backdrop-blur-sm rounded-3xl p-6 shadow-xl">
+            <div className="flex items-center justify-center gap-3 mb-2">
+              <Sparkles className="w-8 h-8 text-purple-600" />
+              <span className="text-2xl font-bold text-gray-800">Powered by AI</span>
+              <Sparkles className="w-8 h-8 text-purple-600" />
+            </div>
+            <p className="text-lg text-gray-700">Unlimited examples and personalized quizzes generated just for you!</p>
+          </div>
+        </div>
       </div>
     </div>
   )
