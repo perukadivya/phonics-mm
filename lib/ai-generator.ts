@@ -46,7 +46,7 @@ export interface FillBlankItem {
   emoji: string
 }
 
-type NvidiaResponse = {
+type AIResponse = {
   choices?: Array<{
     message?: {
       content?: string
@@ -78,13 +78,14 @@ async function generateJson(prompt: string) {
       messages: [
         {
           role: "system",
-          content: "You are a helpful assistant. Always respond with valid JSON only. No markdown, no code fences, just raw JSON.",
+          content:
+            "You are a JSON API. You ONLY output valid JSON objects. Never include markdown, code fences, explanations, or any text outside the JSON. Your output must start with { and end with }.",
         },
         { role: "user", content: prompt },
       ],
       temperature: 0.7,
       top_p: 0.9,
-      max_tokens: 4096,
+      max_tokens: 8192,
     }),
   })
 
@@ -93,27 +94,36 @@ async function generateJson(prompt: string) {
     throw new Error(`AI service error (${response.status}): ${statusText}. Please try again.`)
   }
 
-  const data = (await response.json()) as NvidiaResponse
+  const data = (await response.json()) as AIResponse
   const text = data.choices?.[0]?.message?.content
 
   if (!text) {
     throw new Error("AI response was empty. Please try again.")
   }
 
-  // Clean up response — strip markdown code fences if present
-  const cleaned = text.replace(/```json\n?/g, "").replace(/```\n?/g, "").trim()
+  // Clean up response — strip markdown code fences, thinking tags, etc.
+  let cleaned = text
+  // Remove <think>...</think> blocks
+  cleaned = cleaned.replace(/<think>[\s\S]*?<\/think>/g, "")
+  // Remove code fences
+  cleaned = cleaned.replace(/```json\n?/g, "").replace(/```\n?/g, "")
+  // Extract JSON object
+  const jsonMatch = cleaned.match(/\{[\s\S]*\}/)
+  if (!jsonMatch) {
+    throw new Error("Could not parse AI response as JSON. Please try again.")
+  }
 
-  return JSON.parse(cleaned) as { items?: unknown[] }
+  return JSON.parse(jsonMatch[0]) as { items?: unknown[] }
 }
 
 function sanitizeLetters(items: unknown[]): GeneratedLetter[] {
   return items
     .filter((item): item is Record<string, unknown> => !!item && typeof item === "object")
     .map((item) => ({
-      letter: String(item.letter ?? "").toUpperCase().replace(/[^A-Z]/g, "").slice(0, 1),
+      letter: String(item.letter ?? "").toUpperCase().slice(0, 1),
       sound: cleanSound(String(item.sound ?? "")),
       word: cleanWord(String(item.word ?? "")),
-      emoji: String(item.emoji ?? "🔤").trim() || "🔤",
+      emoji: String(item.emoji ?? "🔤"),
     }))
     .filter((item) => item.letter && item.sound && item.word)
 }
@@ -122,12 +132,17 @@ function sanitizeWords(items: unknown[]): GeneratedWord[] {
   return items
     .filter((item): item is Record<string, unknown> => !!item && typeof item === "object")
     .map((item) => ({
-      word: cleanWord(String(item.word ?? "")).toUpperCase().replace(/[^A-Z]/g, ""),
-      sounds: Array.isArray(item.sounds) ? item.sounds.map((sound) => cleanSound(String(sound))).filter(Boolean) : [],
-      emoji: String(item.emoji ?? "📘").trim() || "📘",
+      word: cleanWord(String(item.word ?? "")).toUpperCase(),
+      sounds: Array.isArray(item.sounds)
+        ? item.sounds.map((s) => cleanSound(String(s)))
+        : String(item.word ?? "")
+          .toUpperCase()
+          .split("")
+          .map((c) => c),
+      emoji: String(item.emoji ?? "📝"),
       meaning: cleanWord(String(item.meaning ?? "")),
     }))
-    .filter((item) => item.word && item.sounds.length > 0 && item.meaning)
+    .filter((item) => item.word && item.meaning)
 }
 
 function sanitizeSentences(items: unknown[]): GeneratedSentence[] {
@@ -135,8 +150,8 @@ function sanitizeSentences(items: unknown[]): GeneratedSentence[] {
     .filter((item): item is Record<string, unknown> => !!item && typeof item === "object")
     .map((item) => ({
       sentence: cleanWord(String(item.sentence ?? "")),
-      words: Array.isArray(item.words) ? item.words.map((word) => cleanWord(String(word))).filter(Boolean) : [],
-      emoji: String(item.emoji ?? "💬").trim() || "💬",
+      words: Array.isArray(item.words) ? item.words.map((w) => cleanWord(String(w))) : String(item.sentence ?? "").split(" "),
+      emoji: String(item.emoji ?? "💬"),
       meaning: cleanWord(String(item.meaning ?? "")),
     }))
     .filter((item) => item.sentence && item.words.length > 0 && item.meaning)
@@ -154,15 +169,28 @@ function getDifficultyDescription(difficulty: Difficulty): string {
 }
 
 export async function generateLetterExamples(count = 5, difficulty: Difficulty = "easy"): Promise<GeneratedLetter[]> {
+  const requestCount = Math.max(count + 3, Math.ceil(count * 1.3))
   try {
     const diffDesc = getDifficultyDescription(difficulty)
-    const data = await generateJson(`Return JSON with this exact shape: {"items": GeneratedLetter[] }.
-Generate ${count} letter sound examples for a phonics app. Difficulty: ${diffDesc}. Each item should have:
-- letter: A-Z single letter
-- sound: phonetic cue without slashes (e.g. buh)
-- word: simple word starting with letter
-- emoji: one relevant emoji`)
+    const data = await generateJson(
+      `Generate EXACTLY ${requestCount} letter sound examples for a children's phonics worksheet.
+Difficulty level: ${diffDesc}.
+
+Return a JSON object with this EXACT structure:
+{
+  "items": [
+    {"letter": "B", "sound": "buh", "word": "Ball", "emoji": "⚽"},
+    {"letter": "C", "sound": "kuh", "word": "Cat", "emoji": "🐱"}
+  ]
+}
+
+Rules:
+- Each item must have: letter (single A-Z uppercase), sound (phonetic without slashes), word (starting with that letter), emoji (single relevant emoji)
+- Use DIFFERENT letters for each item. Do NOT repeat letters.
+- You MUST return exactly ${requestCount} items in the items array. This is critical.`
+    )
     const parsed = sanitizeLetters(data.items ?? [])
+    if (parsed.length >= count) return parsed.slice(0, count)
     if (parsed.length > 0) return parsed
   } catch (error) {
     throw error
@@ -174,15 +202,38 @@ Generate ${count} letter sound examples for a phonics app. Difficulty: ${diffDes
     { letter: "D", sound: "duh", word: "Dog", emoji: "🐶" },
     { letter: "F", sound: "fuh", word: "Fish", emoji: "🐟" },
     { letter: "M", sound: "muh", word: "Moon", emoji: "🌙" },
-  ]
+    { letter: "S", sound: "sss", word: "Sun", emoji: "☀️" },
+    { letter: "T", sound: "tuh", word: "Tree", emoji: "🌳" },
+    { letter: "R", sound: "ruh", word: "Rain", emoji: "🌧️" },
+  ].slice(0, count)
 }
 
 export async function generateThreeLetterWords(count = 10, difficulty: Difficulty = "easy"): Promise<GeneratedWord[]> {
+  const requestCount = Math.max(count + 4, Math.ceil(count * 1.5))
   try {
     const diffDesc = getDifficultyDescription(difficulty)
-    const data = await generateJson(`Return JSON with this exact shape: {"items": GeneratedWord[] }.
-Generate ${count} three-letter words. Difficulty: ${diffDesc}. Each item should have word, sounds array, emoji, meaning.`)
+    const data = await generateJson(
+      `Generate EXACTLY ${requestCount} three-letter CVC words for a children's phonics worksheet.
+Difficulty level: ${diffDesc}.
+
+Return a JSON object with this EXACT structure:
+{
+  "items": [
+    {"word": "CAT", "sounds": ["C", "A", "T"], "emoji": "🐱", "meaning": "A furry pet that says meow!"},
+    {"word": "DOG", "sounds": ["D", "O", "G"], "emoji": "🐶", "meaning": "A friendly pet that barks!"}
+  ]
+}
+
+Rules:
+- Every word MUST be exactly 3 letters long. This is critical.
+- sounds array should break the word into individual letter sounds
+- meaning should be a fun, kid-friendly description
+- emoji must be a single emoji related to the word
+- Use DIFFERENT words. Do NOT repeat any word.
+- You MUST return exactly ${requestCount} items. This is critical.`
+    )
     const parsed = sanitizeWords(data.items ?? []).filter((item) => item.word.length === 3)
+    if (parsed.length >= count) return parsed.slice(0, count)
     if (parsed.length > 0) return parsed
   } catch (error) {
     throw error
@@ -192,15 +243,38 @@ Generate ${count} three-letter words. Difficulty: ${diffDesc}. Each item should 
     { word: "CAT", sounds: ["C", "A", "T"], emoji: "🐱", meaning: "A furry pet that says meow!" },
     { word: "DOG", sounds: ["D", "O", "G"], emoji: "🐶", meaning: "A friendly pet that barks!" },
     { word: "SUN", sounds: ["S", "U", "N"], emoji: "☀️", meaning: "The bright star in the sky!" },
-  ]
+    { word: "BIG", sounds: ["B", "I", "G"], emoji: "🐘", meaning: "Very large in size!" },
+    { word: "CUP", sounds: ["C", "U", "P"], emoji: "☕", meaning: "You drink from it!" },
+    { word: "RED", sounds: ["R", "E", "D"], emoji: "🔴", meaning: "A bright warm color!" },
+    { word: "HAT", sounds: ["H", "A", "T"], emoji: "👒", meaning: "Goes on your head!" },
+    { word: "BED", sounds: ["B", "E", "D"], emoji: "🛏️", meaning: "Where you sleep at night!" },
+  ].slice(0, count)
 }
 
 export async function generateFourLetterWords(count = 8, difficulty: Difficulty = "medium"): Promise<GeneratedWord[]> {
+  const requestCount = Math.max(count + 4, Math.ceil(count * 1.5))
   try {
     const diffDesc = getDifficultyDescription(difficulty)
-    const data = await generateJson(`Return JSON with this exact shape: {"items": GeneratedWord[] }.
-Generate ${count} four-letter words. Difficulty: ${diffDesc}. Use phonetic chunks in sounds array.`)
+    const data = await generateJson(
+      `Generate EXACTLY ${requestCount} four-letter words for a children's phonics worksheet.
+Difficulty level: ${diffDesc}.
+
+Return a JSON object with this EXACT structure:
+{
+  "items": [
+    {"word": "BOOK", "sounds": ["B", "OO", "K"], "emoji": "📚", "meaning": "Something you read!"},
+    {"word": "TREE", "sounds": ["T", "R", "EE"], "emoji": "🌳", "meaning": "A tall plant with leaves!"}
+  ]
+}
+
+Rules:
+- Every word MUST be exactly 4 letters long. This is critical.
+- sounds array should use phonetic chunks (blends like SH, TH, CH, OO, EE count as one sound)
+- Use DIFFERENT words. Do NOT repeat any word.
+- You MUST return exactly ${requestCount} items. This is critical.`
+    )
     const parsed = sanitizeWords(data.items ?? []).filter((item) => item.word.length === 4)
+    if (parsed.length >= count) return parsed.slice(0, count)
     if (parsed.length > 0) return parsed
   } catch (error) {
     throw error
@@ -210,15 +284,38 @@ Generate ${count} four-letter words. Difficulty: ${diffDesc}. Use phonetic chunk
     { word: "BOOK", sounds: ["B", "OO", "K"], emoji: "📚", meaning: "Something you read!" },
     { word: "TREE", sounds: ["T", "R", "EE"], emoji: "🌳", meaning: "A tall plant with leaves!" },
     { word: "FISH", sounds: ["F", "I", "SH"], emoji: "🐟", meaning: "An animal that swims!" },
-  ]
+    { word: "SHIP", sounds: ["SH", "I", "P"], emoji: "🚢", meaning: "Sails on the sea!" },
+    { word: "FROG", sounds: ["F", "R", "O", "G"], emoji: "🐸", meaning: "A green animal that jumps!" },
+    { word: "DUCK", sounds: ["D", "U", "CK"], emoji: "🦆", meaning: "A bird that swims and quacks!" },
+    { word: "RAIN", sounds: ["R", "AI", "N"], emoji: "🌧️", meaning: "Water from the clouds!" },
+    { word: "STAR", sounds: ["S", "T", "AR"], emoji: "⭐", meaning: "Shines in the night sky!" },
+  ].slice(0, count)
 }
 
 export async function generateFiveLetterWords(count = 6, difficulty: Difficulty = "hard"): Promise<GeneratedWord[]> {
+  const requestCount = Math.max(count + 4, Math.ceil(count * 1.5))
   try {
     const diffDesc = getDifficultyDescription(difficulty)
-    const data = await generateJson(`Return JSON with this exact shape: {"items": GeneratedWord[] }.
-Generate ${count} five-letter words. Difficulty: ${diffDesc}. Use phonetic chunks in sounds array.`)
+    const data = await generateJson(
+      `Generate EXACTLY ${requestCount} five-letter words for a children's phonics worksheet.
+Difficulty level: ${diffDesc}.
+
+Return a JSON object with this EXACT structure:
+{
+  "items": [
+    {"word": "HOUSE", "sounds": ["H", "OU", "SE"], "emoji": "🏠", "meaning": "Where people live!"},
+    {"word": "APPLE", "sounds": ["A", "PP", "LE"], "emoji": "🍎", "meaning": "A red or green fruit!"}
+  ]
+}
+
+Rules:
+- Every word MUST be exactly 5 letters long. This is critical.
+- sounds array should use phonetic chunks
+- Use DIFFERENT words. Do NOT repeat any word.
+- You MUST return exactly ${requestCount} items. This is critical.`
+    )
     const parsed = sanitizeWords(data.items ?? []).filter((item) => item.word.length === 5)
+    if (parsed.length >= count) return parsed.slice(0, count)
     if (parsed.length > 0) return parsed
   } catch (error) {
     throw error
@@ -228,15 +325,36 @@ Generate ${count} five-letter words. Difficulty: ${diffDesc}. Use phonetic chunk
     { word: "HOUSE", sounds: ["H", "OU", "SE"], emoji: "🏠", meaning: "Where people live!" },
     { word: "APPLE", sounds: ["A", "PP", "LE"], emoji: "🍎", meaning: "A red or green fruit!" },
     { word: "HAPPY", sounds: ["H", "A", "PP", "Y"], emoji: "😊", meaning: "Feeling good and joyful!" },
-  ]
+    { word: "WATER", sounds: ["W", "A", "T", "ER"], emoji: "💧", meaning: "You drink it every day!" },
+    { word: "TIGER", sounds: ["T", "I", "G", "ER"], emoji: "🐯", meaning: "A big striped cat!" },
+    { word: "TRAIN", sounds: ["T", "R", "AI", "N"], emoji: "🚂", meaning: "Rides on the tracks!" },
+  ].slice(0, count)
 }
 
 export async function generateSimpleSentences(count = 5, difficulty: Difficulty = "easy"): Promise<GeneratedSentence[]> {
+  const requestCount = Math.max(count + 3, Math.ceil(count * 1.3))
   try {
     const diffDesc = getDifficultyDescription(difficulty)
-    const data = await generateJson(`Return JSON with this exact shape: {"items": GeneratedSentence[] }.
-Generate ${count} simple, age-appropriate sentences. Difficulty: ${diffDesc}. Include sentence, words array, emoji, meaning.`)
+    const data = await generateJson(
+      `Generate EXACTLY ${requestCount} simple sentences for a children's phonics worksheet.
+Difficulty level: ${diffDesc}.
+
+Return a JSON object with this EXACT structure:
+{
+  "items": [
+    {"sentence": "The cat is big.", "words": ["The", "cat", "is", "big."], "emoji": "🐱", "meaning": "A large cat!"},
+    {"sentence": "I see a dog.", "words": ["I", "see", "a", "dog."], "emoji": "🐶", "meaning": "Looking at a dog!"}
+  ]
+}
+
+Rules:
+- sentences should be simple, 3-6 words, age-appropriate
+- words array must contain each word of the sentence including punctuation
+- Use DIFFERENT sentences. Do NOT repeat.
+- You MUST return exactly ${requestCount} items. This is critical.`
+    )
     const parsed = sanitizeSentences(data.items ?? [])
+    if (parsed.length >= count) return parsed.slice(0, count)
     if (parsed.length > 0) return parsed
   } catch (error) {
     throw error
@@ -246,28 +364,48 @@ Generate ${count} simple, age-appropriate sentences. Difficulty: ${diffDesc}. In
     { sentence: "The cat is big.", words: ["The", "cat", "is", "big."], emoji: "🐱", meaning: "A large cat!" },
     { sentence: "I see a dog.", words: ["I", "see", "a", "dog."], emoji: "🐶", meaning: "Looking at a dog!" },
     { sentence: "The sun is hot.", words: ["The", "sun", "is", "hot."], emoji: "☀️", meaning: "The sun feels warm!" },
-  ]
+    { sentence: "We go to bed.", words: ["We", "go", "to", "bed."], emoji: "🛏️", meaning: "Time to sleep!" },
+    { sentence: "I like red.", words: ["I", "like", "red."], emoji: "🔴", meaning: "Red is a nice color!" },
+  ].slice(0, count)
 }
 
 export async function generateTracingItems(count = 6, difficulty: Difficulty = "easy"): Promise<TracingItem[]> {
+  const requestCount = Math.max(count + 3, Math.ceil(count * 1.3))
   try {
     const diffDesc = getDifficultyDescription(difficulty)
-    const data = await generateJson(`Return JSON with this exact shape: {"items": TracingItem[] }.
-Generate ${count} letter tracing practice items. Difficulty: ${diffDesc}. Each item should have:
-- letter: A-Z single uppercase letter
-- dottedPattern: the letter shown as dots (e.g. "A" becomes "· · ·" in a triangular shape, just use dotted representation)
-- guideWord: a simple word starting with that letter
-- emoji: one relevant emoji for the guide word`)
+    const data = await generateJson(
+      `Generate EXACTLY ${requestCount} letter tracing items for a children's handwriting worksheet.
+Difficulty level: ${diffDesc}.
+
+Return a JSON object with this EXACT structure:
+{
+  "items": [
+    {"letter": "A", "dottedPattern": "· A ·", "guideWord": "Apple", "emoji": "🍎"},
+    {"letter": "B", "dottedPattern": "· B ·", "guideWord": "Ball", "emoji": "⚽"}
+  ]
+}
+
+Rules:
+- letter must be a single uppercase letter A-Z
+- guideWord should be a simple word starting with that letter
+- Use DIFFERENT letters for each item
+- You MUST return exactly ${requestCount} items. This is critical.`
+    )
     if (Array.isArray(data.items) && data.items.length > 0) {
-      return data.items.filter((item): item is TracingItem =>
-        !!item && typeof item === "object" && "letter" in (item as Record<string, unknown>)
-      ).map(item => ({
-        ...item,
-        letter: String(item.letter).toUpperCase().slice(0, 1),
-        dottedPattern: String(item.dottedPattern || `· ${item.letter} ·`),
-        guideWord: String(item.guideWord || ""),
-        emoji: String(item.emoji || "✏️"),
-      }))
+      const parsed = data.items
+        .filter(
+          (item): item is TracingItem =>
+            !!item && typeof item === "object" && "letter" in (item as Record<string, unknown>)
+        )
+        .map((item) => ({
+          ...item,
+          letter: String(item.letter).toUpperCase().slice(0, 1),
+          dottedPattern: String(item.dottedPattern || `· ${item.letter} ·`),
+          guideWord: String(item.guideWord || ""),
+          emoji: String(item.emoji || "✏️"),
+        }))
+      if (parsed.length >= count) return parsed.slice(0, count)
+      if (parsed.length > 0) return parsed
     }
   } catch (error) {
     throw error
@@ -280,27 +418,49 @@ Generate ${count} letter tracing practice items. Difficulty: ${diffDesc}. Each i
     { letter: "D", dottedPattern: "· D ·", guideWord: "Dog", emoji: "🐶" },
     { letter: "E", dottedPattern: "· E ·", guideWord: "Egg", emoji: "🥚" },
     { letter: "F", dottedPattern: "· F ·", guideWord: "Fish", emoji: "🐟" },
-  ]
+    { letter: "G", dottedPattern: "· G ·", guideWord: "Grapes", emoji: "🍇" },
+    { letter: "H", dottedPattern: "· H ·", guideWord: "Hat", emoji: "👒" },
+  ].slice(0, count)
 }
 
 export async function generateMatchingItems(count = 6, difficulty: Difficulty = "easy"): Promise<MatchingItem[]> {
+  const requestCount = Math.max(count + 3, Math.ceil(count * 1.3))
   try {
     const diffDesc = getDifficultyDescription(difficulty)
-    const data = await generateJson(`Return JSON with this exact shape: {"items": MatchingItem[] }.
-Generate ${count} matching exercise items for kids. Difficulty: ${diffDesc}. Each item should have:
-- word: a simple word
-- emoji: one emoji representing the word
-- options: array of 3 emojis where one matches the word
-- correctIndex: index (0-2) of the correct emoji in options`)
+    const data = await generateJson(
+      `Generate EXACTLY ${requestCount} emoji matching exercise items for a children's worksheet.
+Difficulty level: ${diffDesc}.
+
+Return a JSON object with this EXACT structure:
+{
+  "items": [
+    {"word": "Cat", "emoji": "🐱", "options": ["🐶", "🐱", "🐟"], "correctIndex": 1},
+    {"word": "Sun", "emoji": "☀️", "options": ["☀️", "🌙", "⭐"], "correctIndex": 0}
+  ]
+}
+
+Rules:
+- word is a simple word a child would know
+- emoji represents the word
+- options is an array of EXACTLY 3 emojis, one of which matches the word
+- correctIndex is the 0-based index of the correct emoji in options
+- Use DIFFERENT words. Do NOT repeat.
+- You MUST return exactly ${requestCount} items. This is critical.`
+    )
     if (Array.isArray(data.items) && data.items.length > 0) {
-      return data.items.filter((item): item is MatchingItem =>
-        !!item && typeof item === "object" && "word" in (item as Record<string, unknown>)
-      ).map(item => ({
-        word: String(item.word),
-        emoji: String(item.emoji),
-        options: Array.isArray(item.options) ? item.options.map(String) : ["❓", "❓", "❓"],
-        correctIndex: Number(item.correctIndex) || 0,
-      }))
+      const parsed = data.items
+        .filter(
+          (item): item is MatchingItem =>
+            !!item && typeof item === "object" && "word" in (item as Record<string, unknown>)
+        )
+        .map((item) => ({
+          word: String(item.word),
+          emoji: String(item.emoji),
+          options: Array.isArray(item.options) ? item.options.map(String) : ["❓", "❓", "❓"],
+          correctIndex: Number(item.correctIndex) || 0,
+        }))
+      if (parsed.length >= count) return parsed.slice(0, count)
+      if (parsed.length > 0) return parsed
     }
   } catch (error) {
     throw error
@@ -313,29 +473,50 @@ Generate ${count} matching exercise items for kids. Difficulty: ${diffDesc}. Eac
     { word: "Fish", emoji: "🐟", options: ["🐟", "🐦", "🐛"], correctIndex: 0 },
     { word: "Ball", emoji: "⚽", options: ["🎾", "⚽", "🏐"], correctIndex: 1 },
     { word: "Star", emoji: "⭐", options: ["🌙", "☀️", "⭐"], correctIndex: 2 },
-  ]
+    { word: "Bird", emoji: "🐦", options: ["🐦", "🐛", "🐟"], correctIndex: 0 },
+    { word: "Moon", emoji: "🌙", options: ["⭐", "🌙", "☀️"], correctIndex: 1 },
+  ].slice(0, count)
 }
 
 export async function generateFillBlankItems(count = 6, difficulty: Difficulty = "easy"): Promise<FillBlankItem[]> {
+  const requestCount = Math.max(count + 3, Math.ceil(count * 1.3))
   try {
     const diffDesc = getDifficultyDescription(difficulty)
-    const data = await generateJson(`Return JSON with this exact shape: {"items": FillBlankItem[] }.
-Generate ${count} fill-in-the-missing-letter items. Difficulty: ${diffDesc}. Each item should have:
-- word: the complete word (e.g. "CAT")
-- displayWord: word with one letter replaced by underscore (e.g. "C_T")
-- missingLetter: the missing letter (e.g. "A")
-- hint: a short hint about the word
-- emoji: one relevant emoji`)
+    const data = await generateJson(
+      `Generate EXACTLY ${requestCount} fill-in-the-missing-letter items for a children's phonics worksheet.
+Difficulty level: ${diffDesc}.
+
+Return a JSON object with this EXACT structure:
+{
+  "items": [
+    {"word": "CAT", "displayWord": "C_T", "missingLetter": "A", "hint": "A furry pet", "emoji": "🐱"},
+    {"word": "DOG", "displayWord": "D_G", "missingLetter": "O", "hint": "Man's best friend", "emoji": "🐶"}
+  ]
+}
+
+Rules:
+- word is the complete word in uppercase
+- displayWord has exactly ONE letter replaced with underscore _
+- missingLetter is the removed letter
+- hint is a short kid-friendly clue
+- Use DIFFERENT words. Do NOT repeat.
+- You MUST return exactly ${requestCount} items. This is critical.`
+    )
     if (Array.isArray(data.items) && data.items.length > 0) {
-      return data.items.filter((item): item is FillBlankItem =>
-        !!item && typeof item === "object" && "word" in (item as Record<string, unknown>)
-      ).map(item => ({
-        word: String(item.word).toUpperCase(),
-        displayWord: String(item.displayWord).toUpperCase(),
-        missingLetter: String(item.missingLetter).toUpperCase().slice(0, 1),
-        hint: String(item.hint),
-        emoji: String(item.emoji || "🔤"),
-      }))
+      const parsed = data.items
+        .filter(
+          (item): item is FillBlankItem =>
+            !!item && typeof item === "object" && "word" in (item as Record<string, unknown>)
+        )
+        .map((item) => ({
+          word: String(item.word).toUpperCase(),
+          displayWord: String(item.displayWord).toUpperCase(),
+          missingLetter: String(item.missingLetter).toUpperCase().slice(0, 1),
+          hint: String(item.hint),
+          emoji: String(item.emoji || "🔤"),
+        }))
+      if (parsed.length >= count) return parsed.slice(0, count)
+      if (parsed.length > 0) return parsed
     }
   } catch (error) {
     throw error
@@ -348,19 +529,39 @@ Generate ${count} fill-in-the-missing-letter items. Difficulty: ${diffDesc}. Eac
     { word: "BED", displayWord: "B_D", missingLetter: "E", hint: "Where you sleep", emoji: "🛏️" },
     { word: "CUP", displayWord: "C_P", missingLetter: "U", hint: "Drink from it", emoji: "☕" },
     { word: "HAT", displayWord: "H_T", missingLetter: "A", hint: "Goes on your head", emoji: "👒" },
-  ]
+    { word: "PEN", displayWord: "P_N", missingLetter: "E", hint: "You write with it", emoji: "🖊️" },
+    { word: "MAP", displayWord: "M_P", missingLetter: "A", hint: "Shows places", emoji: "🗺️" },
+  ].slice(0, count)
 }
 
 export async function generatePhonicsQuiz(
   level: "letters" | "three-letter" | "four-letter" | "five-letter" | "sentences",
-  count = 5,
+  count = 5
 ) {
+  const requestCount = Math.max(count + 2, Math.ceil(count * 1.3))
   try {
-    const data = await generateJson(`Return JSON with this exact shape: {"items": QuizQuestion[] }.
-Generate ${count} phonics quiz questions for ${level} for a 5-year-old. Include multiple-choice and spelling items.`)
+    const data = await generateJson(
+      `Generate EXACTLY ${requestCount} phonics quiz questions about "${level}" for a 5-year-old child.
+
+Return a JSON object with this EXACT structure:
+{
+  "items": [
+    {"question": "What sound does the letter B make?", "type": "multiple-choice", "options": ["buh", "bee", "bay", "boo"], "correct": 0, "explanation": "B makes the 'buh' sound!"},
+    {"question": "Spell the word for this emoji: 🐱", "type": "spelling", "answer": "CAT", "explanation": "C-A-T spells cat!"}
+  ]
+}
+
+Rules:
+- Mix "multiple-choice" and "spelling" question types
+- For multiple-choice: include options (array of 4 strings) and correct (0-3 index)
+- For spelling: include answer (the correct word in uppercase)
+- All questions must have explanation
+- You MUST return exactly ${requestCount} items. This is critical.`
+    )
 
     if (Array.isArray(data.items) && data.items.length > 0) {
-      return data.items
+      const parsed = data.items.slice(0, count)
+      return parsed
     }
   } catch (error) {
     throw error
