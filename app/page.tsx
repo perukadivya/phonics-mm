@@ -17,6 +17,8 @@ interface UserProgress {
   currentStreak: number
 }
 
+const floatingEmojis = ["🌟", "📚", "🎵", "✨", "🔤", "🎨", "🌈", "🦋", "🐝", "🌸"]
+
 export default function HomePage() {
   const [progress, setProgress] = useState<UserProgress>({
     letters: 0,
@@ -27,8 +29,10 @@ export default function HomePage() {
     totalStickers: 0,
     currentStreak: 0,
   })
+  const [mounted, setMounted] = useState(false)
 
   useEffect(() => {
+    setMounted(true)
     const savedProgress = localStorage.getItem("phonics-progress")
     if (savedProgress) {
       setProgress(JSON.parse(savedProgress))
@@ -45,6 +49,8 @@ export default function HomePage() {
       total: 26,
       href: "/letters",
       unlocked: true,
+      gradient: "from-rose-400 to-pink-500",
+      bgGlow: "bg-rose-400/20",
     },
     {
       id: "three-letter",
@@ -55,6 +61,8 @@ export default function HomePage() {
       total: 20,
       href: "/three-letter-words",
       unlocked: progress.letters >= 13,
+      gradient: "from-orange-400 to-amber-500",
+      bgGlow: "bg-orange-400/20",
     },
     {
       id: "four-letter",
@@ -65,6 +73,8 @@ export default function HomePage() {
       total: 15,
       href: "/four-letter-words",
       unlocked: progress.threeLetterWords >= 10,
+      gradient: "from-emerald-400 to-teal-500",
+      bgGlow: "bg-emerald-400/20",
     },
     {
       id: "five-letter",
@@ -75,6 +85,8 @@ export default function HomePage() {
       total: 12,
       href: "/five-letter-words",
       unlocked: progress.fourLetterWords >= 8,
+      gradient: "from-blue-400 to-indigo-500",
+      bgGlow: "bg-blue-400/20",
     },
     {
       id: "sentences",
@@ -85,16 +97,20 @@ export default function HomePage() {
       total: 10,
       href: "/sentences",
       unlocked: progress.fiveLetterWords >= 6,
+      gradient: "from-violet-400 to-purple-500",
+      bgGlow: "bg-violet-400/20",
     },
     {
       id: "worksheets",
       title: "Worksheet Generator",
-      description: "Create printable phonics practice sheets!",
+      description: "Create printable practice sheets!",
       icon: "🧾",
       progress: 0,
       total: 1,
       href: "/worksheets",
       unlocked: true,
+      gradient: "from-cyan-400 to-blue-500",
+      bgGlow: "bg-cyan-400/20",
     },
     {
       id: "quiz",
@@ -105,6 +121,8 @@ export default function HomePage() {
       total: 1,
       href: "/quiz",
       unlocked: progress.letters >= 5,
+      gradient: "from-fuchsia-400 to-pink-600",
+      bgGlow: "bg-fuchsia-400/20",
     },
   ]
 
@@ -113,80 +131,121 @@ export default function HomePage() {
   const overallProgress = (totalProgress / totalPossible) * 100
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-purple-400 via-pink-400 to-yellow-400 p-4">
-      <div className="max-w-4xl mx-auto">
+    <div className="min-h-screen bg-gradient-to-br from-purple-500 via-pink-400 to-amber-300 p-4 relative overflow-hidden">
+      {/* Floating Background Emojis */}
+      {mounted && (
+        <div className="fixed inset-0 pointer-events-none overflow-hidden z-0">
+          {floatingEmojis.map((emoji, index) => (
+            <div
+              key={index}
+              className="absolute text-4xl opacity-20 animate-float select-none"
+              style={{
+                left: `${(index * 10) % 90 + 5}%`,
+                top: `${(index * 13 + 7) % 85}%`,
+                animationDelay: `${index * 0.3}s`,
+                animationDuration: `${3 + (index % 3)}s`,
+              }}
+            >
+              {emoji}
+            </div>
+          ))}
+        </div>
+      )}
+
+      <div className="max-w-5xl mx-auto relative z-10">
         {/* Header */}
-        <div className="text-center mb-8">
-          <h1 className="text-6xl font-bold text-white mb-4 drop-shadow-lg">🎵 Phonics Fun! 🎵</h1>
-          <div className="bg-white/90 backdrop-blur-sm rounded-3xl p-6 shadow-xl">
-            <div className="flex items-center justify-center gap-4 mb-4">
-              <Trophy className="w-8 h-8 text-yellow-500" />
-              <span className="text-2xl font-bold text-gray-800">{progress.totalStickers} Stickers</span>
-              <Sparkles className="w-8 h-8 text-purple-500" />
-            </div>
-            <div className="space-y-2">
-              <div className="flex justify-between text-lg font-semibold text-gray-700">
-                <span>Overall Progress</span>
-                <span>{Math.round(overallProgress)}%</span>
+        <div className="text-center mb-8 animate-fadeIn">
+          <h1 className="text-6xl md:text-7xl font-black text-white mb-2 drop-shadow-lg tracking-tight">
+            🎵 Phonics Fun! 🎵
+          </h1>
+          <p className="text-white/80 text-lg font-semibold">Learn to read with interactive AI-powered lessons</p>
+
+          {/* Stats Bar */}
+          <div className="glass rounded-3xl p-6 shadow-2xl mt-6 animate-slideUp">
+            <div className="flex items-center justify-center gap-6 mb-4 flex-wrap">
+              <div className="flex items-center gap-2">
+                <Trophy className="w-7 h-7 text-yellow-500" />
+                <span className="text-2xl font-black text-gray-800">{progress.totalStickers}</span>
+                <span className="text-gray-500 font-semibold">Stickers</span>
               </div>
-              <Progress value={overallProgress} className="h-4" />
+              {progress.currentStreak > 0 && (
+                <div className="flex items-center gap-2">
+                  <span className="text-2xl">🔥</span>
+                  <span className="text-2xl font-black text-gray-800">{progress.currentStreak}</span>
+                  <span className="text-gray-500 font-semibold">Day Streak</span>
+                </div>
+              )}
+              <div className="flex items-center gap-2">
+                <Sparkles className="w-6 h-6 text-purple-500 animate-sparkle" />
+                <span className="text-lg font-bold text-purple-600">{Math.round(overallProgress)}% Complete</span>
+              </div>
             </div>
+            <Progress value={overallProgress} className="h-4 bg-gray-200" />
           </div>
         </div>
 
         {/* Learning Stages */}
-        <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
-          {stages.map((stage) => (
+        <div className="grid gap-5 md:grid-cols-2 lg:grid-cols-3">
+          {stages.map((stage, index) => (
             <Card
               key={stage.id}
-              className={`transform transition-all duration-300 hover:scale-105 ${
-                stage.unlocked ? "bg-white/95 shadow-xl cursor-pointer" : "bg-gray-300/50 cursor-not-allowed"
-              }`}
+              className={`transform transition-all duration-300 border-0 rounded-3xl overflow-hidden animate-slideUp ${stage.unlocked
+                  ? "hover:scale-105 hover:shadow-2xl cursor-pointer glass"
+                  : "bg-gray-200/50 cursor-not-allowed opacity-70"
+                }`}
+              style={{ animationDelay: `${index * 0.08}s` }}
             >
-              <CardContent className="p-6">
-                <div className="text-center space-y-4">
-                  <div className="text-6xl mb-2">{stage.icon}</div>
-                  <h3 className="text-2xl font-bold text-gray-800">{stage.title}</h3>
-                  <p className="text-lg text-gray-600">{stage.description}</p>
+              <CardContent className="p-6 relative">
+                {/* Background glow */}
+                {stage.unlocked && (
+                  <div className={`absolute -top-10 -right-10 w-32 h-32 rounded-full ${stage.bgGlow} blur-2xl`} />
+                )}
+
+                <div className="text-center space-y-3 relative z-10">
+                  <div className="text-5xl mb-1">{stage.icon}</div>
+                  <h3 className="text-xl font-black text-gray-800">{stage.title}</h3>
+                  <p className="text-sm text-gray-500 font-semibold">{stage.description}</p>
 
                   {stage.unlocked ? (
                     <>
-                      {stage.id !== "quiz" && (
-                        <div className="space-y-2">
-                          <div className="flex justify-between text-sm font-semibold">
+                      {stage.id !== "quiz" && stage.id !== "worksheets" && (
+                        <div className="space-y-1.5">
+                          <div className="flex justify-between text-xs font-bold text-gray-500">
                             <span>Progress</span>
-                            <span>
+                            <span className="text-gray-700">
                               {stage.progress}/{stage.total}
                             </span>
                           </div>
-                          <Progress value={(stage.progress / stage.total) * 100} className="h-3" />
+                          <Progress value={(stage.progress / stage.total) * 100} className="h-2.5" />
                         </div>
                       )}
 
                       <Link href={stage.href}>
                         <Button
                           size="lg"
-                          className={`w-full text-xl py-6 font-bold rounded-2xl shadow-lg ${
-                            stage.id === "quiz" || stage.id === "worksheets"
-                              ? "bg-gradient-to-r from-purple-500 to-indigo-600 hover:from-purple-600 hover:to-indigo-700"
-                              : "bg-gradient-to-r from-green-400 to-blue-500 hover:from-green-500 hover:to-blue-600"
-                          } text-white`}
+                          className={`w-full text-lg py-5 font-black rounded-2xl shadow-lg bg-gradient-to-r ${stage.gradient} text-white border-0 hover:shadow-xl transition-all hover:scale-[1.02]`}
                         >
                           {stage.id === "quiz" ? (
-                            <Brain className="w-6 h-6 mr-2" />
+                            <Brain className="w-5 h-5 mr-2" />
                           ) : stage.id === "worksheets" ? (
-                            <FileText className="w-6 h-6 mr-2" />
+                            <FileText className="w-5 h-5 mr-2" />
                           ) : (
-                            <BookOpen className="w-6 h-6 mr-2" />
+                            <BookOpen className="w-5 h-5 mr-2" />
                           )}
-                          {stage.id === "quiz" ? "Take Quiz!" : stage.id === "worksheets" ? "Create Sheets!" : "Let's Learn!"}
+                          {stage.id === "quiz"
+                            ? "Take Quiz!"
+                            : stage.id === "worksheets"
+                              ? "Create Sheets!"
+                              : "Let's Learn!"}
                         </Button>
                       </Link>
                     </>
                   ) : (
-                    <div className="space-y-4">
-                      <div className="text-gray-500 font-semibold">🔒 Complete previous stages to unlock!</div>
-                      <Button disabled size="lg" className="w-full text-xl py-6">
+                    <div className="space-y-3">
+                      <div className="text-gray-400 font-bold text-sm">
+                        🔒 Complete previous stages to unlock!
+                      </div>
+                      <Button disabled size="lg" className="w-full text-lg py-5 rounded-2xl">
                         Locked
                       </Button>
                     </div>
@@ -197,28 +256,30 @@ export default function HomePage() {
           ))}
         </div>
 
-        {/* Daily Streak */}
-        {progress.currentStreak > 0 && (
-          <div className="mt-8 text-center">
-            <div className="bg-white/90 backdrop-blur-sm rounded-3xl p-6 shadow-xl inline-block">
-              <div className="flex items-center gap-3">
-                <span className="text-3xl">🔥</span>
-                <span className="text-2xl font-bold text-gray-800">{progress.currentStreak} Day Streak!</span>
-                <span className="text-3xl">🔥</span>
-              </div>
+        {/* Welcome Message for new users */}
+        {progress.totalStickers === 0 && mounted && (
+          <div className="mt-8 animate-slideUp" style={{ animationDelay: "0.6s" }}>
+            <div className="glass rounded-3xl p-6 shadow-xl text-center">
+              <div className="text-4xl mb-2">👋</div>
+              <h3 className="text-2xl font-black text-gray-800 mb-1">Welcome to Phonics Fun!</h3>
+              <p className="text-gray-600 font-semibold">
+                Start with <strong>Letter Sounds</strong> to begin your phonics adventure!
+              </p>
             </div>
           </div>
         )}
 
         {/* AI Features Notice */}
-        <div className="mt-8 text-center">
-          <div className="bg-gradient-to-r from-purple-500/20 to-pink-500/20 backdrop-blur-sm rounded-3xl p-6 shadow-xl">
-            <div className="flex items-center justify-center gap-3 mb-2">
-              <Sparkles className="w-8 h-8 text-purple-600" />
-              <span className="text-2xl font-bold text-gray-800">Powered by AI</span>
-              <Sparkles className="w-8 h-8 text-purple-600" />
+        <div className="mt-8 animate-slideUp" style={{ animationDelay: "0.7s" }}>
+          <div className="glass rounded-3xl p-6 shadow-xl text-center">
+            <div className="flex items-center justify-center gap-3 mb-1">
+              <Sparkles className="w-6 h-6 text-purple-500 animate-sparkle" />
+              <span className="text-xl font-black text-gray-800">Powered by AI</span>
+              <Sparkles className="w-6 h-6 text-purple-500 animate-sparkle" />
             </div>
-            <p className="text-lg text-gray-700">Unlimited examples and personalized quizzes generated just for you!</p>
+            <p className="text-gray-500 font-semibold text-sm">
+              Unlimited examples, personalized quizzes & printable worksheets — all generated just for you!
+            </p>
           </div>
         </div>
       </div>

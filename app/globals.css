@@ -3,7 +3,7 @@
 @tailwind utilities;
 
 body {
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: 'Nunito', Arial, Helvetica, sans-serif;
 }
 
 @layer utilities {
@@ -90,5 +90,92 @@ body {
   }
   body {
     @apply bg-background text-foreground;
+  }
+}
+
+/* ===== Animations ===== */
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@keyframes slideUp {
+  from { opacity: 0; transform: translateY(20px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@keyframes float {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-12px); }
+}
+@keyframes sparkle {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.6; transform: scale(0.8); }
+}
+@keyframes confetti-fall {
+  0% { transform: translateY(-100vh) rotate(0deg); opacity: 1; }
+  100% { transform: translateY(100vh) rotate(720deg); opacity: 0; }
+}
+
+.animate-fadeIn {
+  animation: fadeIn 0.4s ease-out forwards;
+}
+.animate-slideUp {
+  animation: slideUp 0.5s ease-out forwards;
+}
+.animate-float {
+  animation: float 3s ease-in-out infinite;
+}
+.animate-sparkle {
+  animation: sparkle 2s ease-in-out infinite;
+}
+
+/* ===== Glassmorphism ===== */
+.glass {
+  background: rgba(255, 255, 255, 0.85);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.3);
+}
+
+/* ===== Print Styles ===== */
+@media print {
+  @page {
+    margin: 0.75in;
+    size: A4;
+  }
+
+  body {
+    font-family: 'Nunito', Arial, sans-serif !important;
+    background: white !important;
+    color: black !important;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  .print\\:hidden {
+    display: none !important;
+  }
+
+  .worksheet-paper {
+    box-shadow: none !important;
+    border: none !important;
+    border-radius: 0 !important;
+  }
+
+  /* Prevent page breaks inside items */
+  .space-y-4 > div,
+  .space-y-5 > div,
+  .space-y-6 > div {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+
+  /* Ensure borders print */
+  [class*="border"] {
+    border-color: #d1d5db !important;
+  }
+
+  /* Make emojis print properly */
+  .text-3xl, .text-4xl, .text-2xl {
+    font-size: inherit;
   }
 }
