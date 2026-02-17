@@ -7,6 +7,7 @@ import { Progress } from "@/components/ui/progress"
 import { Input } from "@/components/ui/input"
 import { Volume2, Home, RefreshCw, Check, X } from "lucide-react"
 import Link from "next/link"
+import { useProgress } from "@/hooks/useProgress"
 
 interface QuizQuestion {
   question: string
@@ -19,6 +20,7 @@ interface QuizQuestion {
 }
 
 export default function QuizPage() {
+  const { progress: userProgress, updateProgress } = useProgress()
   const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0)
   const [questions, setQuestions] = useState<QuizQuestion[]>([])
   const [userAnswers, setUserAnswers] = useState<(string | number)[]>([])
@@ -126,9 +128,7 @@ export default function QuizPage() {
     setShowResult(true)
 
     // Update progress
-    const progress = JSON.parse(localStorage.getItem("phonics-progress") || "{}")
-    progress.totalStickers = (progress.totalStickers || 0) + Math.floor(correct / 2)
-    localStorage.setItem("phonics-progress", JSON.stringify(progress))
+    updateProgress({ totalStickers: userProgress.totalStickers + Math.floor(correct / 2) })
   }
 
   const isCorrect = () => {

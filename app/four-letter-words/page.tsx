@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button"
 import { Progress } from "@/components/ui/progress"
 import { Volume2, Star, ArrowLeft, ArrowRight, Home } from "lucide-react"
 import Link from "next/link"
+import { useProgress } from "@/hooks/useProgress"
 
 const words = [
   { word: "BOOK", sounds: ["B", "OO", "K"], emoji: "📚", meaning: "Something you read!" },
@@ -26,6 +27,7 @@ const words = [
 ]
 
 export default function FourLetterWordsPage() {
+  const { markItemComplete, getCompletedItems } = useProgress()
   const [currentIndex, setCurrentIndex] = useState(0)
   const [completedWords, setCompletedWords] = useState<Set<number>>(new Set())
   const [showSticker, setShowSticker] = useState(false)
@@ -36,11 +38,8 @@ export default function FourLetterWordsPage() {
   const currentWord = words[currentIndex]
 
   useEffect(() => {
-    const saved = localStorage.getItem("completed-four-letter-words")
-    if (saved) {
-      setCompletedWords(new Set(JSON.parse(saved)))
-    }
-  }, [])
+    setCompletedWords(getCompletedItems("four-letter-words"))
+  }, [getCompletedItems])
 
   useEffect(() => {
     if (gameMode === "match") {
@@ -125,13 +124,7 @@ export default function FourLetterWordsPage() {
     const newCompleted = new Set(completedWords)
     newCompleted.add(currentIndex)
     setCompletedWords(newCompleted)
-    localStorage.setItem("completed-four-letter-words", JSON.stringify([...newCompleted]))
-
-    // Update overall progress
-    const progress = JSON.parse(localStorage.getItem("phonics-progress") || "{}")
-    progress.fourLetterWords = newCompleted.size
-    progress.totalStickers = (progress.totalStickers || 0) + 1
-    localStorage.setItem("phonics-progress", JSON.stringify(progress))
+    markItemComplete("four-letter-words", currentIndex)
 
     setShowSticker(true)
     setTimeout(() => setShowSticker(false), 2000)
@@ -306,13 +299,12 @@ export default function FourLetterWordsPage() {
                       disabled={pair.matched}
                       size="lg"
                       variant={selectedCard === index ? "default" : "outline"}
-                      className={`h-24 text-2xl font-bold ${
-                        pair.matched
+                      className={`h-24 text-2xl font-bold ${pair.matched
                           ? "bg-green-200 text-green-800"
                           : selectedCard === index
                             ? "bg-blue-500 text-white"
                             : ""
-                      }`}
+                        }`}
                     >
                       {pair.word || pair.emoji}
                     </Button>

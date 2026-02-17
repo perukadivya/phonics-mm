@@ -6,6 +6,8 @@ import { Button } from "@/components/ui/button"
 import { Progress } from "@/components/ui/progress"
 import { Volume2, Star, ArrowLeft, ArrowRight, Home, RefreshCw, Sparkles } from "lucide-react"
 import Link from "next/link"
+import { NavBar } from "@/components/nav-bar"
+import { useProgress } from "@/hooks/useProgress"
 import type { GeneratedLetter } from "@/lib/ai-generator"
 
 const defaultLetters = [
@@ -17,6 +19,7 @@ const defaultLetters = [
 ]
 
 export default function LettersPage() {
+  const { markItemComplete, getCompletedItems } = useProgress()
   const [currentIndex, setCurrentIndex] = useState(0)
   const [completedLetters, setCompletedLetters] = useState<Set<number>>(new Set())
   const [showSticker, setShowSticker] = useState(false)
@@ -26,11 +29,8 @@ export default function LettersPage() {
   const currentLetter = letters[currentIndex]
 
   useEffect(() => {
-    const saved = localStorage.getItem("completed-letters")
-    if (saved) {
-      setCompletedLetters(new Set(JSON.parse(saved)))
-    }
-  }, [])
+    setCompletedLetters(getCompletedItems("letters"))
+  }, [getCompletedItems])
 
   const generateNewContent = async () => {
     setIsGenerating(true)
@@ -100,12 +100,7 @@ export default function LettersPage() {
     const newCompleted = new Set(completedLetters)
     newCompleted.add(currentIndex)
     setCompletedLetters(newCompleted)
-    localStorage.setItem("completed-letters", JSON.stringify([...newCompleted]))
-
-    const progress = JSON.parse(localStorage.getItem("phonics-progress") || "{}")
-    progress.letters = newCompleted.size
-    progress.totalStickers = (progress.totalStickers || 0) + 1
-    localStorage.setItem("phonics-progress", JSON.stringify(progress))
+    markItemComplete("letters", currentIndex)
 
     setShowSticker(true)
     setTimeout(() => setShowSticker(false), 2000)

@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button"
 import { Progress } from "@/components/ui/progress"
 import { Volume2, Star, ArrowLeft, ArrowRight, Home } from "lucide-react"
 import Link from "next/link"
+import { useProgress } from "@/hooks/useProgress"
 
 const words = [
   { word: "CAT", sounds: ["C", "A", "T"], emoji: "🐱", meaning: "A furry pet that says meow!" },
@@ -31,6 +32,7 @@ const words = [
 ]
 
 export default function ThreeLetterWordsPage() {
+  const { markItemComplete, getCompletedItems } = useProgress()
   const [currentIndex, setCurrentIndex] = useState(0)
   const [completedWords, setCompletedWords] = useState<Set<number>>(new Set())
   const [showSticker, setShowSticker] = useState(false)
@@ -41,10 +43,7 @@ export default function ThreeLetterWordsPage() {
   const currentWord = words[currentIndex]
 
   useEffect(() => {
-    const saved = localStorage.getItem("completed-three-letter-words")
-    if (saved) {
-      setCompletedWords(new Set(JSON.parse(saved)))
-    }
+    setCompletedWords(getCompletedItems("three-letter-words"))
   }, [])
 
   useEffect(() => {
@@ -134,13 +133,7 @@ export default function ThreeLetterWordsPage() {
     const newCompleted = new Set(completedWords)
     newCompleted.add(currentIndex)
     setCompletedWords(newCompleted)
-    localStorage.setItem("completed-three-letter-words", JSON.stringify([...newCompleted]))
-
-    // Update overall progress
-    const progress = JSON.parse(localStorage.getItem("phonics-progress") || "{}")
-    progress.threeLetterWords = newCompleted.size
-    progress.totalStickers = (progress.totalStickers || 0) + 1
-    localStorage.setItem("phonics-progress", JSON.stringify(progress))
+    markItemComplete("three-letter-words", currentIndex)
 
     setShowSticker(true)
     setTimeout(() => setShowSticker(false), 2000)

@@ -6,37 +6,17 @@ import { Button } from "@/components/ui/button"
 import { Progress } from "@/components/ui/progress"
 import { Trophy, BookOpen, Sparkles, Brain, FileText } from "lucide-react"
 import Link from "next/link"
-
-interface UserProgress {
-  letters: number
-  threeLetterWords: number
-  fourLetterWords: number
-  fiveLetterWords: number
-  sentences: number
-  totalStickers: number
-  currentStreak: number
-}
+import { NavBar } from "@/components/nav-bar"
+import { useProgress } from "@/hooks/useProgress"
 
 const floatingEmojis = ["🌟", "📚", "🎵", "✨", "🔤", "🎨", "🌈", "🦋", "🐝", "🌸"]
 
 export default function HomePage() {
-  const [progress, setProgress] = useState<UserProgress>({
-    letters: 0,
-    threeLetterWords: 0,
-    fourLetterWords: 0,
-    fiveLetterWords: 0,
-    sentences: 0,
-    totalStickers: 0,
-    currentStreak: 0,
-  })
+  const { progress, loading } = useProgress()
   const [mounted, setMounted] = useState(false)
 
   useEffect(() => {
     setMounted(true)
-    const savedProgress = localStorage.getItem("phonics-progress")
-    if (savedProgress) {
-      setProgress(JSON.parse(savedProgress))
-    }
   }, [])
 
   const stages = [
@@ -128,7 +108,18 @@ export default function HomePage() {
 
   const totalProgress = stages.slice(0, 5).reduce((acc, stage) => acc + stage.progress, 0)
   const totalPossible = stages.slice(0, 5).reduce((acc, stage) => acc + stage.total, 0)
-  const overallProgress = (totalProgress / totalPossible) * 100
+  const overallProgress = totalPossible > 0 ? (totalProgress / totalPossible) * 100 : 0
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-purple-500 via-pink-400 to-amber-300 flex items-center justify-center">
+        <div className="text-center">
+          <div className="text-6xl mb-4 animate-bounce">🎵</div>
+          <p className="text-2xl font-black text-white">Loading your progress...</p>
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-purple-500 via-pink-400 to-amber-300 p-4 relative overflow-hidden">
@@ -153,6 +144,8 @@ export default function HomePage() {
       )}
 
       <div className="max-w-5xl mx-auto relative z-10">
+        <NavBar />
+
         {/* Header */}
         <div className="text-center mb-8 animate-fadeIn">
           <h1 className="text-6xl md:text-7xl font-black text-white mb-2 drop-shadow-lg tracking-tight">
@@ -196,58 +189,38 @@ export default function HomePage() {
               style={{ animationDelay: `${index * 0.08}s` }}
             >
               <CardContent className="p-6 relative">
-                {/* Background glow */}
                 {stage.unlocked && (
                   <div className={`absolute -top-10 -right-10 w-32 h-32 rounded-full ${stage.bgGlow} blur-2xl`} />
                 )}
-
                 <div className="text-center space-y-3 relative z-10">
                   <div className="text-5xl mb-1">{stage.icon}</div>
                   <h3 className="text-xl font-black text-gray-800">{stage.title}</h3>
                   <p className="text-sm text-gray-500 font-semibold">{stage.description}</p>
-
                   {stage.unlocked ? (
                     <>
                       {stage.id !== "quiz" && stage.id !== "worksheets" && (
                         <div className="space-y-1.5">
                           <div className="flex justify-between text-xs font-bold text-gray-500">
                             <span>Progress</span>
-                            <span className="text-gray-700">
-                              {stage.progress}/{stage.total}
-                            </span>
+                            <span className="text-gray-700">{stage.progress}/{stage.total}</span>
                           </div>
                           <Progress value={(stage.progress / stage.total) * 100} className="h-2.5" />
                         </div>
                       )}
-
                       <Link href={stage.href}>
                         <Button
                           size="lg"
                           className={`w-full text-lg py-5 font-black rounded-2xl shadow-lg bg-gradient-to-r ${stage.gradient} text-white border-0 hover:shadow-xl transition-all hover:scale-[1.02]`}
                         >
-                          {stage.id === "quiz" ? (
-                            <Brain className="w-5 h-5 mr-2" />
-                          ) : stage.id === "worksheets" ? (
-                            <FileText className="w-5 h-5 mr-2" />
-                          ) : (
-                            <BookOpen className="w-5 h-5 mr-2" />
-                          )}
-                          {stage.id === "quiz"
-                            ? "Take Quiz!"
-                            : stage.id === "worksheets"
-                              ? "Create Sheets!"
-                              : "Let's Learn!"}
+                          {stage.id === "quiz" ? <Brain className="w-5 h-5 mr-2" /> : stage.id === "worksheets" ? <FileText className="w-5 h-5 mr-2" /> : <BookOpen className="w-5 h-5 mr-2" />}
+                          {stage.id === "quiz" ? "Take Quiz!" : stage.id === "worksheets" ? "Create Sheets!" : "Let's Learn!"}
                         </Button>
                       </Link>
                     </>
                   ) : (
                     <div className="space-y-3">
-                      <div className="text-gray-400 font-bold text-sm">
-                        🔒 Complete previous stages to unlock!
-                      </div>
-                      <Button disabled size="lg" className="w-full text-lg py-5 rounded-2xl">
-                        Locked
-                      </Button>
+                      <div className="text-gray-400 font-bold text-sm">🔒 Complete previous stages to unlock!</div>
+                      <Button disabled size="lg" className="w-full text-lg py-5 rounded-2xl">Locked</Button>
                     </div>
                   )}
                 </div>
@@ -256,20 +229,18 @@ export default function HomePage() {
           ))}
         </div>
 
-        {/* Welcome Message for new users */}
+        {/* Welcome Message */}
         {progress.totalStickers === 0 && mounted && (
           <div className="mt-8 animate-slideUp" style={{ animationDelay: "0.6s" }}>
             <div className="glass rounded-3xl p-6 shadow-xl text-center">
               <div className="text-4xl mb-2">👋</div>
               <h3 className="text-2xl font-black text-gray-800 mb-1">Welcome to Phonics Fun!</h3>
-              <p className="text-gray-600 font-semibold">
-                Start with <strong>Letter Sounds</strong> to begin your phonics adventure!
-              </p>
+              <p className="text-gray-600 font-semibold">Start with <strong>Letter Sounds</strong> to begin your phonics adventure!</p>
             </div>
           </div>
         )}
 
-        {/* AI Features Notice */}
+        {/* AI Features */}
         <div className="mt-8 animate-slideUp" style={{ animationDelay: "0.7s" }}>
           <div className="glass rounded-3xl p-6 shadow-xl text-center">
             <div className="flex items-center justify-center gap-3 mb-1">
@@ -277,9 +248,7 @@ export default function HomePage() {
               <span className="text-xl font-black text-gray-800">Powered by AI</span>
               <Sparkles className="w-6 h-6 text-purple-500 animate-sparkle" />
             </div>
-            <p className="text-gray-500 font-semibold text-sm">
-              Unlimited examples, personalized quizzes & printable worksheets — all generated just for you!
-            </p>
+            <p className="text-gray-500 font-semibold text-sm">Unlimited examples, personalized quizzes & printable worksheets — all generated just for you!</p>
           </div>
         </div>
       </div>

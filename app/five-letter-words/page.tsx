@@ -7,6 +7,7 @@ import { Progress } from "@/components/ui/progress"
 import { Input } from "@/components/ui/input"
 import { Volume2, Star, ArrowLeft, ArrowRight, Home, Check, X } from "lucide-react"
 import Link from "next/link"
+import { useProgress } from "@/hooks/useProgress"
 
 const words = [
   { word: "HOUSE", sounds: ["H", "OU", "SE"], emoji: "🏠", meaning: "Where people live!" },
@@ -24,6 +25,7 @@ const words = [
 ]
 
 export default function FiveLetterWordsPage() {
+  const { markItemComplete, getCompletedItems } = useProgress()
   const [currentIndex, setCurrentIndex] = useState(0)
   const [completedWords, setCompletedWords] = useState<Set<number>>(new Set())
   const [showSticker, setShowSticker] = useState(false)
@@ -34,11 +36,8 @@ export default function FiveLetterWordsPage() {
   const currentWord = words[currentIndex]
 
   useEffect(() => {
-    const saved = localStorage.getItem("completed-five-letter-words")
-    if (saved) {
-      setCompletedWords(new Set(JSON.parse(saved)))
-    }
-  }, [])
+    setCompletedWords(getCompletedItems("five-letter-words"))
+  }, [getCompletedItems])
 
   useEffect(() => {
     if (gameMode === "type") {
@@ -106,13 +105,7 @@ export default function FiveLetterWordsPage() {
     const newCompleted = new Set(completedWords)
     newCompleted.add(currentIndex)
     setCompletedWords(newCompleted)
-    localStorage.setItem("completed-five-letter-words", JSON.stringify([...newCompleted]))
-
-    // Update overall progress
-    const progress = JSON.parse(localStorage.getItem("phonics-progress") || "{}")
-    progress.fiveLetterWords = newCompleted.size
-    progress.totalStickers = (progress.totalStickers || 0) + 1
-    localStorage.setItem("phonics-progress", JSON.stringify(progress))
+    markItemComplete("five-letter-words", currentIndex)
 
     setShowSticker(true)
     setTimeout(() => setShowSticker(false), 2000)

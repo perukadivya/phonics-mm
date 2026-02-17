@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button"
 import { Progress } from "@/components/ui/progress"
 import { Volume2, Star, ArrowLeft, ArrowRight, Home, Check } from "lucide-react"
 import Link from "next/link"
+import { useProgress } from "@/hooks/useProgress"
 
 const sentences = [
   {
@@ -71,6 +72,7 @@ const sentences = [
 ]
 
 export default function SentencesPage() {
+  const { markItemComplete, getCompletedItems } = useProgress()
   const [currentIndex, setCurrentIndex] = useState(0)
   const [completedSentences, setCompletedSentences] = useState<Set<number>>(new Set())
   const [showSticker, setShowSticker] = useState(false)
@@ -81,11 +83,8 @@ export default function SentencesPage() {
   const currentSentence = sentences[currentIndex]
 
   useEffect(() => {
-    const saved = localStorage.getItem("completed-sentences")
-    if (saved) {
-      setCompletedSentences(new Set(JSON.parse(saved)))
-    }
-  }, [])
+    setCompletedSentences(getCompletedItems("sentences"))
+  }, [getCompletedItems])
 
   useEffect(() => {
     if (gameMode === "build") {
@@ -113,13 +112,7 @@ export default function SentencesPage() {
     const newCompleted = new Set(completedSentences)
     newCompleted.add(currentIndex)
     setCompletedSentences(newCompleted)
-    localStorage.setItem("completed-sentences", JSON.stringify([...newCompleted]))
-
-    // Update overall progress
-    const progress = JSON.parse(localStorage.getItem("phonics-progress") || "{}")
-    progress.sentences = newCompleted.size
-    progress.totalStickers = (progress.totalStickers || 0) + 1
-    localStorage.setItem("phonics-progress", JSON.stringify(progress))
+    markItemComplete("sentences", currentIndex)
 
     setShowSticker(true)
     setTimeout(() => setShowSticker(false), 2000)
