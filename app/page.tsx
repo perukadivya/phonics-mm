@@ -4,7 +4,7 @@ import { useState, useEffect } from "react"
 import { Card, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Progress } from "@/components/ui/progress"
-import { Trophy, BookOpen, Sparkles, Brain } from "lucide-react"
+import { Trophy, BookOpen, Sparkles, Brain, FileText } from "lucide-react"
 import Link from "next/link"
 
 interface UserProgress {
@@ -87,6 +87,16 @@ export default function HomePage() {
       unlocked: progress.fiveLetterWords >= 6,
     },
     {
+      id: "worksheets",
+      title: "Worksheet Generator",
+      description: "Create printable phonics practice sheets!",
+      icon: "🧾",
+      progress: 0,
+      total: 1,
+      href: "/worksheets",
+      unlocked: true,
+    },
+    {
       id: "quiz",
       title: "AI Quiz Challenge",
       description: "Test your phonics skills!",
@@ -157,17 +167,19 @@ export default function HomePage() {
                         <Button
                           size="lg"
                           className={`w-full text-xl py-6 font-bold rounded-2xl shadow-lg ${
-                            stage.id === "quiz"
+                            stage.id === "quiz" || stage.id === "worksheets"
                               ? "bg-gradient-to-r from-purple-500 to-indigo-600 hover:from-purple-600 hover:to-indigo-700"
                               : "bg-gradient-to-r from-green-400 to-blue-500 hover:from-green-500 hover:to-blue-600"
                           } text-white`}
                         >
                           {stage.id === "quiz" ? (
                             <Brain className="w-6 h-6 mr-2" />
+                          ) : stage.id === "worksheets" ? (
+                            <FileText className="w-6 h-6 mr-2" />
                           ) : (
                             <BookOpen className="w-6 h-6 mr-2" />
                           )}
-                          {stage.id === "quiz" ? "Take Quiz!" : "Let's Learn!"}
+                          {stage.id === "quiz" ? "Take Quiz!" : stage.id === "worksheets" ? "Create Sheets!" : "Let's Learn!"}
                         </Button>
                       </Link>
                     </>

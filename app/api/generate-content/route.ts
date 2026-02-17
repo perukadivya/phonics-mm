@@ -10,7 +10,8 @@ import {
 
 export async function POST(request: NextRequest) {
   try {
-    const { type, count = 5 } = await request.json()
+    const body = await request.json()
+    const { type, count = 5, level } = body
 
     let content
     switch (type) {
@@ -30,7 +31,6 @@ export async function POST(request: NextRequest) {
         content = await generateSimpleSentences(count)
         break
       case "quiz":
-        const { level } = await request.json()
         content = await generatePhonicsQuiz(level, count)
         break
       default:
