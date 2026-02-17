@@ -1,5 +1,5 @@
-const OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
-const DEFAULT_MODEL = "anthropic/claude-3.5-sonnet"
+const NVIDIA_URL = "https://integrate.api.nvidia.com/v1/chat/completions"
+const DEFAULT_MODEL = "z-ai/glm5"
 
 export type Difficulty = "easy" | "medium" | "hard"
 
@@ -46,7 +46,7 @@ export interface FillBlankItem {
   emoji: string
 }
 
-type OpenRouterResponse = {
+type NvidiaResponse = {
   choices?: Array<{
     message?: {
       content?: string
@@ -63,20 +63,28 @@ function cleanWord(word: string) {
 }
 
 async function generateJson(prompt: string) {
-  if (!process.env.OPENROUTER_API_KEY) {
-    throw new Error("OPENROUTER_API_KEY is missing. Please set it in your environment variables.")
+  if (!process.env.NVIDIA_API_KEY) {
+    throw new Error("NVIDIA_API_KEY is missing. Please set it in your environment variables.")
   }
 
-  const response = await fetch(OPENROUTER_URL, {
+  const response = await fetch(NVIDIA_URL, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      Authorization: `Bearer ${process.env.OPENROUTER_API_KEY}`,
+      Authorization: `Bearer ${process.env.NVIDIA_API_KEY}`,
     },
     body: JSON.stringify({
       model: DEFAULT_MODEL,
-      messages: [{ role: "user", content: prompt }],
-      response_format: { type: "json_object" },
+      messages: [
+        {
+          role: "system",
+          content: "You are a helpful assistant. Always respond with valid JSON only. No markdown, no code fences, just raw JSON.",
+        },
+        { role: "user", content: prompt },
+      ],
+      temperature: 0.7,
+      top_p: 0.9,
+      max_tokens: 4096,
     }),
   })
 
@@ -85,14 +93,17 @@ async function generateJson(prompt: string) {
     throw new Error(`AI service error (${response.status}): ${statusText}. Please try again.`)
   }
 
-  const data = (await response.json()) as OpenRouterResponse
+  const data = (await response.json()) as NvidiaResponse
   const text = data.choices?.[0]?.message?.content
 
   if (!text) {
     throw new Error("AI response was empty. Please try again.")
   }
 
-  return JSON.parse(text) as { items?: unknown[] }
+  // Clean up response — strip markdown code fences if present
+  const cleaned = text.replace(/```json\n?/g, "").replace(/```\n?/g, "").trim()
+
+  return JSON.parse(cleaned) as { items?: unknown[] }
 }
 
 function sanitizeLetters(items: unknown[]): GeneratedLetter[] {
