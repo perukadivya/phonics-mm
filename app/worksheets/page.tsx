@@ -89,7 +89,10 @@ export default function WorksheetGeneratorPage() {
                 <select
                   className="w-full rounded-lg border border-gray-300 p-3 mt-1"
                   value={worksheetType}
-                  onChange={(event) => setWorksheetType(event.target.value as WorksheetType)}
+                  onChange={(event) => {
+                    setWorksheetType(event.target.value as WorksheetType)
+                    setItems([])
+                  }}
                 >
                   <option value="letters">Letter Sounds</option>
                   <option value="three-letter-words">3-Letter Words</option>
