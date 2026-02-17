@@ -89,8 +89,8 @@ export default function HomePage() {
       total: 1,
       href: "/worksheets",
       unlocked: true,
-      gradient: "from-cyan-400 to-blue-500",
-      bgGlow: "bg-cyan-400/20",
+      gradient: "from-pink-400 to-rose-500",
+      bgGlow: "bg-pink-400/20",
     },
     {
       id: "quiz",
@@ -183,8 +183,8 @@ export default function HomePage() {
             <Card
               key={stage.id}
               className={`transform transition-all duration-300 border-0 rounded-3xl overflow-hidden animate-slideUp ${stage.unlocked
-                  ? "hover:scale-105 hover:shadow-2xl cursor-pointer glass"
-                  : "bg-gray-200/50 cursor-not-allowed opacity-70"
+                ? "hover:scale-105 hover:shadow-2xl cursor-pointer glass"
+                : "bg-gray-200/50 cursor-not-allowed opacity-70"
                 }`}
               style={{ animationDelay: `${index * 0.08}s` }}
             >
