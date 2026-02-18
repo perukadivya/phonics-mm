@@ -5,8 +5,9 @@ import { Card, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Progress } from "@/components/ui/progress"
 import { Input } from "@/components/ui/input"
-import { Volume2, Home, RefreshCw, Check, X } from "lucide-react"
+import { Volume2, Home, RefreshCw, Check, X, Crown } from "lucide-react"
 import Link from "next/link"
+import { useRouter } from "next/navigation"
 import { useProgress } from "@/hooks/useProgress"
 
 interface QuizQuestion {
@@ -20,6 +21,7 @@ interface QuizQuestion {
 }
 
 export default function QuizPage() {
+  const router = useRouter()
   const { progress: userProgress, updateProgress } = useProgress()
   const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0)
   const [questions, setQuestions] = useState<QuizQuestion[]>([])
@@ -32,8 +34,26 @@ export default function QuizPage() {
   >("letters")
   const [currentAnswer, setCurrentAnswer] = useState("")
   const [showFeedback, setShowFeedback] = useState(false)
+  const [showUpgradeModal, setShowUpgradeModal] = useState(false)
+  const [usageInfo, setUsageInfo] = useState<{ used: number; limit: number } | null>(null)
 
   const currentQuestion = questions[currentQuestionIndex]
+
+  useEffect(() => {
+    // Check usage on mount
+    fetch("/api/usage/check", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ type: "quiz" }),
+    })
+      .then((r) => r.json())
+      .then((data) => {
+        if (typeof data.used === "number" && typeof data.limit === "number") {
+          setUsageInfo({ used: data.used, limit: data.limit })
+        }
+      })
+      .catch(() => { })
+  }, [])
 
   useEffect(() => {
     generateQuiz()
@@ -54,9 +74,20 @@ export default function QuizPage() {
         body: JSON.stringify({ type: "quiz", level: selectedLevel, count: 10 }),
       })
 
+      const data = await response.json()
+
+      if (response.status === 402 && data.usageLimitReached) {
+        setUsageInfo({ used: data.used, limit: data.limit })
+        setShowUpgradeModal(true)
+        setIsGenerating(false)
+        return
+      }
+
       if (response.ok) {
-        const { content } = await response.json()
-        setQuestions(content)
+        setQuestions(data.content)
+        if (usageInfo) {
+          setUsageInfo({ ...usageInfo, used: usageInfo.used + 1 })
+        }
       }
     } catch (error) {
       console.error("Failed to generate quiz:", error)
@@ -141,6 +172,43 @@ export default function QuizPage() {
   }
 
   const progress = ((currentQuestionIndex + (showFeedback ? 1 : 0)) / questions.length) * 100
+
+  // Upgrade Modal
+  if (showUpgradeModal) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-indigo-400 via-purple-400 to-pink-400 p-4 flex items-center justify-center">
+        <div className="bg-white rounded-3xl shadow-2xl max-w-md w-full p-8 text-center animate-fadeIn">
+          <div className="text-6xl mb-4">🔒</div>
+          <h3 className="text-2xl font-black text-gray-800 mb-2">Free Quiz Limit Reached!</h3>
+          <p className="text-gray-500 mb-1">
+            You&apos;ve used all <span className="font-bold text-purple-600">{usageInfo?.limit}</span> free quiz questions.
+          </p>
+          <p className="text-gray-400 text-sm mb-6">Upgrade to unlock unlimited quizzes!</p>
+          <div className="space-y-3">
+            <Button
+              onClick={() => router.push("/pricing")}
+              className="w-full py-5 rounded-2xl font-black bg-gradient-to-r from-purple-600 to-fuchsia-600 text-white shadow-lg hover:shadow-xl"
+            >
+              <Crown className="w-5 h-5 mr-2" />
+              ✨ View Plans — from ₹99/mo
+            </Button>
+            <Button
+              variant="outline"
+              onClick={() => setShowUpgradeModal(false)}
+              className="w-full py-4 rounded-2xl font-bold text-gray-400"
+            >
+              Maybe Later
+            </Button>
+            <Link href="/">
+              <Button variant="ghost" className="w-full text-gray-400 font-semibold">
+                <Home className="w-4 h-4 mr-2" /> Back to Home
+              </Button>
+            </Link>
+          </div>
+        </div>
+      </div>
+    )
+  }
 
   if (isGenerating) {
     return (

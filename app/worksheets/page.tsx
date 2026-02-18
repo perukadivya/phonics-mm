@@ -2,6 +2,7 @@
 
 import { useMemo, useState, useEffect } from "react"
 import Link from "next/link"
+import { useRouter } from "next/navigation"
 import { Card, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Home, Printer, RefreshCw, Sparkles, AlertCircle, ChevronDown } from "lucide-react"
@@ -45,6 +46,7 @@ const worksheetTypes: { key: WorksheetType; label: string; emoji: string; desc: 
 ]
 
 export default function WorksheetGeneratorPage() {
+  const router = useRouter()
   const [worksheetType, setWorksheetType] = useState<WorksheetType>("letters")
   const [difficulty, setDifficulty] = useState<Difficulty>("easy")
   const [count, setCount] = useState(8)
@@ -52,6 +54,8 @@ export default function WorksheetGeneratorPage() {
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [childName, setChildName] = useState("")
+  const [showUpgradeModal, setShowUpgradeModal] = useState(false)
+  const [usageInfo, setUsageInfo] = useState<{ used: number; limit: number } | null>(null)
 
   useEffect(() => {
     const savedName = localStorage.getItem("phonics-child-name")
@@ -67,9 +71,26 @@ export default function WorksheetGeneratorPage() {
     [worksheetType]
   )
 
+  // Check usage on mount
+  useEffect(() => {
+    fetch("/api/usage/check", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ type: "worksheets" }),
+    })
+      .then((r) => r.json())
+      .then((data) => {
+        if (typeof data.used === "number" && typeof data.limit === "number") {
+          setUsageInfo({ used: data.used, limit: data.limit })
+        }
+      })
+      .catch(() => { })
+  }, [])
+
   const generateWorksheet = async () => {
     setIsLoading(true)
     setError(null)
+    setShowUpgradeModal(false)
     try {
       const response = await fetch("/api/generate-content", {
         method: "POST",
@@ -77,8 +98,20 @@ export default function WorksheetGeneratorPage() {
         body: JSON.stringify({ type: worksheetType, count, difficulty }),
       })
       const data = await response.json()
+
+      if (response.status === 402 && data.usageLimitReached) {
+        setUsageInfo({ used: data.used, limit: data.limit })
+        setShowUpgradeModal(true)
+        return
+      }
+
       if (!response.ok) throw new Error(data.error || "Failed to generate worksheet")
       setItems(data.content)
+
+      // Update usage counter
+      if (usageInfo) {
+        setUsageInfo({ ...usageInfo, used: usageInfo.used + 1 })
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Something went wrong. Please try again.")
     } finally {
@@ -126,6 +159,11 @@ export default function WorksheetGeneratorPage() {
           <h1 className="text-2xl md:text-3xl font-black text-white drop-shadow-lg">
             ✨ Worksheet Magic ✨
           </h1>
+          {usageInfo && (
+            <div className="bg-white/20 backdrop-blur-sm rounded-full px-4 py-2 text-white font-bold text-xs">
+              {usageInfo.used}/{usageInfo.limit} used
+            </div>
+          )}
           <Button
             onClick={() => window.print()}
             disabled={items.length === 0}
@@ -151,8 +189,8 @@ export default function WorksheetGeneratorPage() {
                   setError(null)
                 }}
                 className={`rounded-2xl p-3 text-left transition-all duration-200 border-2 ${worksheetType === type.key
-                    ? "bg-purple-50 border-purple-400 shadow-md scale-[1.02]"
-                    : "bg-gray-50 border-transparent hover:bg-gray-100 hover:border-gray-200"
+                  ? "bg-purple-50 border-purple-400 shadow-md scale-[1.02]"
+                  : "bg-gray-50 border-transparent hover:bg-gray-100 hover:border-gray-200"
                   }`}
               >
                 <div className="text-2xl mb-1">{type.emoji}</div>
@@ -181,8 +219,8 @@ export default function WorksheetGeneratorPage() {
                       key={d}
                       onClick={() => setDifficulty(d)}
                       className={`flex-1 rounded-xl border-2 p-2.5 font-bold text-xs transition-all ${difficulty === d
-                          ? `${config.active} shadow-sm`
-                          : "bg-gray-50 text-gray-400 border-gray-200 hover:bg-gray-100"
+                        ? `${config.active} shadow-sm`
+                        : "bg-gray-50 text-gray-400 border-gray-200 hover:bg-gray-100"
                         }`}
                     >
                       <span className="text-base block">{config.emoji}</span>
@@ -248,6 +286,35 @@ export default function WorksheetGeneratorPage() {
             )}
           </Button>
         </div>
+
+        {/* Upgrade Modal */}
+        {showUpgradeModal && (
+          <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4 print:hidden animate-fadeIn">
+            <div className="bg-white rounded-3xl shadow-2xl max-w-md w-full p-8 text-center">
+              <div className="text-6xl mb-4">🔒</div>
+              <h3 className="text-2xl font-black text-gray-800 mb-2">Free Limit Reached!</h3>
+              <p className="text-gray-500 mb-1">
+                You&apos;ve used all <span className="font-bold text-purple-600">{usageInfo?.limit}</span> free worksheet generations.
+              </p>
+              <p className="text-gray-400 text-sm mb-6">Upgrade to unlock unlimited worksheets!</p>
+              <div className="space-y-3">
+                <Button
+                  onClick={() => router.push("/pricing")}
+                  className="w-full py-5 rounded-2xl font-black bg-gradient-to-r from-purple-600 to-fuchsia-600 text-white shadow-lg hover:shadow-xl"
+                >
+                  ✨ View Plans — from ₹99/mo
+                </Button>
+                <Button
+                  variant="outline"
+                  onClick={() => setShowUpgradeModal(false)}
+                  className="w-full py-4 rounded-2xl font-bold text-gray-400"
+                >
+                  Maybe Later
+                </Button>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Error Alert */}
         {error && (
@@ -493,8 +560,8 @@ export default function WorksheetGeneratorPage() {
                                 <div
                                   key={ci}
                                   className={`w-10 h-12 border-2 rounded-lg flex items-center justify-center text-xl font-black ${char === "_"
-                                      ? "border-purple-400 border-dashed bg-purple-50 text-purple-300"
-                                      : "border-gray-200 bg-gray-50 text-gray-700"
+                                    ? "border-purple-400 border-dashed bg-purple-50 text-purple-300"
+                                    : "border-gray-200 bg-gray-50 text-gray-700"
                                     }`}
                                 >
                                   {char === "_" ? "?" : char}

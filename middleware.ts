@@ -4,7 +4,7 @@ import type { NextRequest } from "next/server"
 const COOKIE_NAME = "phonics-session"
 
 // Routes that don't require authentication
-const PUBLIC_ROUTES = ["/login", "/signup"]
+const PUBLIC_ROUTES = ["/login", "/signup", "/pricing"]
 const PUBLIC_API_ROUTES = ["/api/auth/login", "/api/auth/signup"]
 
 export function middleware(request: NextRequest) {

@@ -4,19 +4,25 @@ import { useState, useEffect } from "react"
 import { Card, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Progress } from "@/components/ui/progress"
-import { Trophy, BookOpen, Sparkles, Brain, FileText } from "lucide-react"
+import { Trophy, BookOpen, Sparkles, Brain, FileText, Crown } from "lucide-react"
 import Link from "next/link"
 import { NavBar } from "@/components/nav-bar"
 import { useProgress } from "@/hooks/useProgress"
+import { canAccessFeature, type PlanId } from "@/lib/plans"
 
 const floatingEmojis = ["🌟", "📚", "🎵", "✨", "🔤", "🎨", "🌈", "🦋", "🐝", "🌸"]
 
 export default function HomePage() {
   const { progress, loading } = useProgress()
   const [mounted, setMounted] = useState(false)
+  const [userPlan, setUserPlan] = useState<PlanId>("free")
 
   useEffect(() => {
     setMounted(true)
+    fetch("/api/user/plan")
+      .then((r) => r.json())
+      .then((data) => { if (data.plan) setUserPlan(data.plan) })
+      .catch(() => { })
   }, [])
 
   const stages = [
@@ -29,6 +35,7 @@ export default function HomePage() {
       total: 26,
       href: "/letters",
       unlocked: true,
+      planRequired: false,
       gradient: "from-rose-400 to-pink-500",
       bgGlow: "bg-rose-400/20",
     },
@@ -40,7 +47,8 @@ export default function HomePage() {
       progress: progress.threeLetterWords,
       total: 20,
       href: "/three-letter-words",
-      unlocked: progress.letters >= 13,
+      unlocked: progress.letters >= 13 && canAccessFeature(userPlan, "three-letter-words"),
+      planRequired: !canAccessFeature(userPlan, "three-letter-words"),
       gradient: "from-orange-400 to-amber-500",
       bgGlow: "bg-orange-400/20",
     },
@@ -52,7 +60,8 @@ export default function HomePage() {
       progress: progress.fourLetterWords,
       total: 15,
       href: "/four-letter-words",
-      unlocked: progress.threeLetterWords >= 10,
+      unlocked: progress.threeLetterWords >= 10 && canAccessFeature(userPlan, "four-letter-words"),
+      planRequired: !canAccessFeature(userPlan, "four-letter-words"),
       gradient: "from-emerald-400 to-teal-500",
       bgGlow: "bg-emerald-400/20",
     },
@@ -64,7 +73,8 @@ export default function HomePage() {
       progress: progress.fiveLetterWords,
       total: 12,
       href: "/five-letter-words",
-      unlocked: progress.fourLetterWords >= 8,
+      unlocked: progress.fourLetterWords >= 8 && canAccessFeature(userPlan, "five-letter-words"),
+      planRequired: !canAccessFeature(userPlan, "five-letter-words"),
       gradient: "from-blue-400 to-indigo-500",
       bgGlow: "bg-blue-400/20",
     },
@@ -76,7 +86,8 @@ export default function HomePage() {
       progress: progress.sentences,
       total: 10,
       href: "/sentences",
-      unlocked: progress.fiveLetterWords >= 6,
+      unlocked: progress.fiveLetterWords >= 6 && canAccessFeature(userPlan, "sentences"),
+      planRequired: !canAccessFeature(userPlan, "sentences"),
       gradient: "from-violet-400 to-purple-500",
       bgGlow: "bg-violet-400/20",
     },
@@ -89,6 +100,7 @@ export default function HomePage() {
       total: 1,
       href: "/worksheets",
       unlocked: true,
+      planRequired: false,
       gradient: "from-pink-400 to-rose-500",
       bgGlow: "bg-pink-400/20",
     },
@@ -101,6 +113,7 @@ export default function HomePage() {
       total: 1,
       href: "/quiz",
       unlocked: progress.letters >= 5,
+      planRequired: false,
       gradient: "from-fuchsia-400 to-pink-600",
       bgGlow: "bg-fuchsia-400/20",
     },
@@ -217,6 +230,16 @@ export default function HomePage() {
                         </Button>
                       </Link>
                     </>
+                  ) : stage.planRequired ? (
+                    <div className="space-y-3">
+                      <div className="text-purple-500 font-bold text-sm">👑 Upgrade to unlock!</div>
+                      <Link href="/pricing">
+                        <Button size="lg" className="w-full text-lg py-5 rounded-2xl bg-gradient-to-r from-purple-500 to-fuchsia-600 text-white font-black border-0 hover:shadow-xl transition-all hover:scale-[1.02]">
+                          <Crown className="w-5 h-5 mr-2" />
+                          Upgrade — ₹99/mo
+                        </Button>
+                      </Link>
+                    </div>
                   ) : (
                     <div className="space-y-3">
                       <div className="text-gray-400 font-bold text-sm">🔒 Complete previous stages to unlock!</div>
