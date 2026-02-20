@@ -3,18 +3,24 @@ import type { NextRequest } from "next/server"
 
 const COOKIE_NAME = "phonics-session"
 
-// Routes that don't require authentication
-const PUBLIC_ROUTES = ["/login", "/signup", "/pricing"]
+// Auth routes: redirect to home if already logged in
+const AUTH_ROUTES = ["/login", "/signup"]
+// Open routes: accessible to everyone (logged in or not), no redirect
+const OPEN_ROUTES = ["/pricing"]
 const PUBLIC_API_ROUTES = ["/api/auth/login", "/api/auth/signup"]
 
 export function middleware(request: NextRequest) {
     const { pathname } = request.nextUrl
     const token = request.cookies.get(COOKIE_NAME)?.value
 
-    // Allow public routes
-    if (PUBLIC_ROUTES.includes(pathname) || PUBLIC_API_ROUTES.includes(pathname)) {
-        // If authenticated user visits login/signup, redirect to home
-        if (token && PUBLIC_ROUTES.includes(pathname)) {
+    // Allow open routes for everyone without any redirect
+    if (OPEN_ROUTES.includes(pathname)) {
+        return NextResponse.next()
+    }
+
+    // Allow auth routes, but redirect logged-in users to home
+    if (AUTH_ROUTES.includes(pathname) || PUBLIC_API_ROUTES.includes(pathname)) {
+        if (token && AUTH_ROUTES.includes(pathname)) {
             return NextResponse.redirect(new URL("/", request.url))
         }
         return NextResponse.next()
