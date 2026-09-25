@@ -5,7 +5,7 @@ import { getUserPlan } from "@/lib/usage"
 export async function GET() {
     const user = await getSession()
     if (!user) {
-        return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+        return NextResponse.json({ plan: "free", guest: true, expiresAt: null })
     }
 
     try {

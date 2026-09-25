@@ -4,370 +4,450 @@ import { useState, useEffect } from "react"
 import { Card, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Progress } from "@/components/ui/progress"
-import { Volume2, Star, ArrowLeft, ArrowRight, Home } from "lucide-react"
-import Link from "next/link"
+import {
+  Volume2,
+  Star,
+  ArrowLeft,
+  ArrowRight,
+  Sparkles,
+  RotateCcw,
+  CheckCircle2,
+  Award,
+} from "lucide-react"
+import { NavBar } from "@/components/nav-bar"
+import { Mascot } from "@/components/mascot"
+import { Confetti } from "@/components/confetti"
 import { useProgress } from "@/hooks/useProgress"
-
-const words = [
-  { word: "CAT", sounds: ["C", "A", "T"], emoji: "🐱", meaning: "A furry pet that says meow!" },
-  { word: "DOG", sounds: ["D", "O", "G"], emoji: "🐶", meaning: "A friendly pet that barks!" },
-  { word: "SUN", sounds: ["S", "U", "N"], emoji: "☀️", meaning: "The bright star in the sky!" },
-  { word: "BAT", sounds: ["B", "A", "T"], emoji: "🦇", meaning: "A flying animal!" },
-  { word: "HAT", sounds: ["H", "A", "T"], emoji: "👒", meaning: "Something you wear on your head!" },
-  { word: "BED", sounds: ["B", "E", "D"], emoji: "🛏️", meaning: "Where you sleep!" },
-  { word: "RED", sounds: ["R", "E", "D"], emoji: "🔴", meaning: "A bright color!" },
-  { word: "BIG", sounds: ["B", "I", "G"], emoji: "🐘", meaning: "Very large!" },
-  { word: "RUN", sounds: ["R", "U", "N"], emoji: "🏃", meaning: "To move very fast!" },
-  { word: "FUN", sounds: ["F", "U", "N"], emoji: "🎉", meaning: "Something enjoyable!" },
-  { word: "CUP", sounds: ["C", "U", "P"], emoji: "☕", meaning: "Something to drink from!" },
-  { word: "BUS", sounds: ["B", "U", "S"], emoji: "🚌", meaning: "A big vehicle!" },
-  { word: "EGG", sounds: ["E", "G", "G"], emoji: "🥚", meaning: "What chickens lay!" },
-  { word: "PIG", sounds: ["P", "I", "G"], emoji: "🐷", meaning: "A pink farm animal!" },
-  { word: "BOX", sounds: ["B", "O", "X"], emoji: "📦", meaning: "Something to put things in!" },
-  { word: "TOY", sounds: ["T", "O", "Y"], emoji: "🧸", meaning: "Something fun to play with!" },
-  { word: "BAG", sounds: ["B", "A", "G"], emoji: "👜", meaning: "Something to carry things!" },
-  { word: "CAR", sounds: ["C", "A", "R"], emoji: "🚗", meaning: "A vehicle with wheels!" },
-  { word: "TOP", sounds: ["T", "O", "P"], emoji: "🔝", meaning: "The highest part!" },
-  { word: "NET", sounds: ["N", "E", "T"], emoji: "🥅", meaning: "Something with holes!" },
-]
+import { THREE_LETTER_WORDS, type PhonicsWordItem } from "@/lib/phonics-data"
+import {
+  playPopSound,
+  playStarSound,
+  playSuccessSound,
+  playWrongSound,
+  speakText,
+  speakLetterSound,
+} from "@/lib/audio"
 
 export default function ThreeLetterWordsPage() {
   const { markItemComplete, getCompletedItems } = useProgress()
   const [currentIndex, setCurrentIndex] = useState(0)
   const [completedWords, setCompletedWords] = useState<Set<number>>(new Set())
-  const [showSticker, setShowSticker] = useState(false)
+  const [showConfetti, setShowConfetti] = useState(false)
   const [gameMode, setGameMode] = useState<"learn" | "spell">("learn")
-  const [draggedLetters, setDraggedLetters] = useState<string[]>([])
-  const [availableLetters, setAvailableLetters] = useState<string[]>([])
 
-  const currentWord = words[currentIndex]
+  // Spelling game state
+  const [spelledLetters, setSpelledLetters] = useState<string[]>([])
+  const [availableBubbles, setAvailableBubbles] = useState<string[]>([])
+  const [spellStatus, setSpellStatus] = useState<"pending" | "correct" | "wrong">("pending")
+  const [activeTileIndex, setActiveTileIndex] = useState<number | null>(null)
+
+  const currentWord: PhonicsWordItem = THREE_LETTER_WORDS[currentIndex] || THREE_LETTER_WORDS[0]
 
   useEffect(() => {
     setCompletedWords(getCompletedItems("three-letter-words"))
-  }, [])
+  }, [getCompletedItems])
 
+  // Setup spelling game when switching words or modes
   useEffect(() => {
     if (gameMode === "spell") {
-      // Shuffle letters for spelling game
-      const wordLetters = [...currentWord.sounds]
-      const extraLetters = [
-        "A",
-        "E",
-        "I",
-        "O",
-        "U",
-        "B",
-        "C",
-        "D",
-        "F",
-        "G",
-        "H",
-        "J",
-        "K",
-        "L",
-        "M",
-        "N",
-        "P",
-        "Q",
-        "R",
-        "S",
-        "T",
-        "V",
-        "W",
-        "X",
-        "Y",
-        "Z",
-      ]
-        .filter((letter) => !wordLetters.includes(letter))
-        .slice(0, 3)
+      const correct = currentWord.word.split("")
+      const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ".split("").filter((l) => !correct.includes(l))
+      // 3 distractors
+      const distractors = alphabet.sort(() => Math.random() - 0.5).slice(0, 3)
+      const combined = [...correct, ...distractors].sort(() => Math.random() - 0.5)
 
-      const allLetters = [...wordLetters, ...extraLetters].sort(() => Math.random() - 0.5)
-      setAvailableLetters(allLetters)
-      setDraggedLetters([])
+      setAvailableBubbles(combined)
+      setSpelledLetters([])
+      setSpellStatus("pending")
     }
-  }, [currentIndex, gameMode, currentWord.sounds])
+  }, [currentIndex, gameMode, currentWord.word])
 
-  const playWord = () => {
-    const utterance = new SpeechSynthesisUtterance(currentWord.word)
-    utterance.rate = 0.8
-    speechSynthesis.speak(utterance)
+  const handlePlayWord = () => {
+    playPopSound()
+    speakText(`${currentWord.word}! ${currentWord.meaning}`, { rate: 0.85, pitch: 1.2 })
   }
 
-  const playLetter = (letter: string) => {
-    const phoneticSounds: { [key: string]: string } = {
-      A: "ah",
-      B: "buh",
-      C: "kuh",
-      D: "duh",
-      E: "eh",
-      F: "fuh",
-      G: "guh",
-      H: "huh",
-      I: "ih",
-      J: "juh",
-      K: "kuh",
-      L: "luh",
-      M: "muh",
-      N: "nuh",
-      O: "oh",
-      P: "puh",
-      Q: "kwuh",
-      R: "ruh",
-      S: "sss",
-      T: "tuh",
-      U: "uh",
-      V: "vuh",
-      W: "wuh",
-      X: "ks",
-      Y: "yuh",
-      Z: "zzz",
-    }
-
-    const utterance = new SpeechSynthesisUtterance(phoneticSounds[letter] || letter)
-    utterance.rate = 0.6
-    utterance.pitch = 1.2
-    speechSynthesis.speak(utterance)
+  const handlePlaySoundTile = (letter: string, index: number) => {
+    setActiveTileIndex(index)
+    playPopSound()
+    speakLetterSound(letter)
+    setTimeout(() => setActiveTileIndex(null), 800)
   }
 
-  const markComplete = () => {
-    const newCompleted = new Set(completedWords)
-    newCompleted.add(currentIndex)
-    setCompletedWords(newCompleted)
+  const handleBlendWord = () => {
+    playPopSound()
+    const letters = currentWord.word.split("")
+    // Speak first letter, then second, then third, then blended word
+    speakText(
+      `${letters[0]}... ${letters[1]}... ${letters[2]}... ${currentWord.word}!`,
+      { rate: 0.75, pitch: 1.2 }
+    )
+  }
+
+  const handleAddLetter = (letter: string, bubbleIndex: number) => {
+    if (spelledLetters.length >= 3) return
+    playPopSound()
+
+    const updated = [...spelledLetters, letter]
+    setSpelledLetters(updated)
+
+    // Remove tapped bubble
+    const newBubbles = [...availableBubbles]
+    newBubbles.splice(bubbleIndex, 1)
+    setAvailableBubbles(newBubbles)
+
+    // If 3 letters entered, check spelling
+    if (updated.length === 3) {
+      const userSpelling = updated.join("")
+      if (userSpelling === currentWord.word) {
+        setSpellStatus("correct")
+        playSuccessSound()
+        setShowConfetti(true)
+
+        // Mark complete
+        const newDone = new Set(completedWords)
+        newDone.add(currentIndex)
+        setCompletedWords(newDone)
+        markItemComplete("three-letter-words", currentIndex)
+      } else {
+        setSpellStatus("wrong")
+        playWrongSound()
+      }
+    }
+  }
+
+  const handleResetSpelling = () => {
+    playPopSound()
+    const correct = currentWord.word.split("")
+    const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ".split("").filter((l) => !correct.includes(l))
+    const distractors = alphabet.sort(() => Math.random() - 0.5).slice(0, 3)
+    const combined = [...correct, ...distractors].sort(() => Math.random() - 0.5)
+
+    setAvailableBubbles(combined)
+    setSpelledLetters([])
+    setSpellStatus("pending")
+  }
+
+  const handleMarkComplete = () => {
+    const updated = new Set(completedWords)
+    updated.add(currentIndex)
+    setCompletedWords(updated)
     markItemComplete("three-letter-words", currentIndex)
 
-    setShowSticker(true)
-    setTimeout(() => setShowSticker(false), 2000)
+    playStarSound()
+    setShowConfetti(true)
   }
 
-  const nextWord = () => {
-    if (currentIndex < words.length - 1) {
-      setCurrentIndex(currentIndex + 1)
-      setGameMode("learn")
+  const handleNext = () => {
+    if (currentIndex < THREE_LETTER_WORDS.length - 1) {
+      playPopSound()
+      setCurrentIndex((prev) => prev + 1)
     }
   }
 
-  const prevWord = () => {
+  const handlePrev = () => {
     if (currentIndex > 0) {
-      setCurrentIndex(currentIndex - 1)
-      setGameMode("learn")
+      playPopSound()
+      setCurrentIndex((prev) => prev - 1)
     }
   }
 
-  const addLetter = (letter: string) => {
-    if (draggedLetters.length < 3) {
-      setDraggedLetters([...draggedLetters, letter])
-      setAvailableLetters(availableLetters.filter((l, i) => availableLetters.indexOf(letter) !== i))
-    }
-  }
-
-  const removeLetter = (index: number) => {
-    const letter = draggedLetters[index]
-    setDraggedLetters(draggedLetters.filter((_, i) => i !== index))
-    setAvailableLetters([...availableLetters, letter])
-  }
-
-  const checkSpelling = () => {
-    if (draggedLetters.join("") === currentWord.word) {
-      markComplete()
-      setGameMode("learn")
-    }
-  }
-
-  const progress = (completedWords.size / words.length) * 100
+  const progressPercent = (completedWords.size / THREE_LETTER_WORDS.length) * 100
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-green-400 via-blue-400 to-purple-400 p-4">
-      <div className="max-w-4xl mx-auto">
-        {/* Header */}
-        <div className="flex items-center justify-between mb-6">
-          <Link href="/">
-            <Button variant="outline" size="lg" className="text-xl">
-              <Home className="w-6 h-6 mr-2" />
-              Home
-            </Button>
-          </Link>
-          <h1 className="text-4xl font-bold text-white text-center">📝 3-Letter Words 📝</h1>
-          <div className="w-24" />
+    <div className="min-h-screen bg-gradient-to-br from-amber-400 via-orange-400 to-rose-400 p-3 sm:p-5 relative overflow-hidden">
+      <Confetti active={showConfetti} onComplete={() => setShowConfetti(false)} />
+
+      <div className="max-w-4xl mx-auto relative z-10">
+        <NavBar />
+
+        {/* Top Header */}
+        <div className="flex items-center justify-between gap-3 mb-4 flex-wrap">
+          <div>
+            <h1 className="text-3xl sm:text-4xl font-black text-white drop-shadow-md flex items-center gap-2">
+              <span>📝</span>
+              <span>3-Letter Words</span>
+            </h1>
+            <p className="text-xs sm:text-sm font-bold text-white/90">
+              Sound out CVC (Consonant-Vowel-Consonant) words and blend them together!
+            </p>
+          </div>
+
+          {/* Mode Switcher */}
+          <div className="flex items-center gap-1.5 bg-white/90 p-1.5 rounded-2xl shadow-md border-2 border-white">
+            <button
+              onClick={() => {
+                playPopSound()
+                setGameMode("learn")
+              }}
+              className={`px-3 py-1.5 rounded-xl font-black text-xs transition-all cursor-pointer ${
+                gameMode === "learn"
+                  ? "bg-orange-500 text-white shadow"
+                  : "text-gray-600 hover:text-gray-900"
+              }`}
+            >
+              📖 Learn & Blend
+            </button>
+            <button
+              onClick={() => {
+                playPopSound()
+                setGameMode("spell")
+              }}
+              className={`px-3 py-1.5 rounded-xl font-black text-xs transition-all cursor-pointer ${
+                gameMode === "spell"
+                  ? "bg-orange-500 text-white shadow"
+                  : "text-gray-600 hover:text-gray-900"
+              }`}
+            >
+              🧩 Spell & Pop
+            </button>
+          </div>
         </div>
 
-        {/* Progress */}
-        <div className="bg-white/90 backdrop-blur-sm rounded-2xl p-4 mb-6">
-          <div className="flex justify-between text-lg font-semibold mb-2">
-            <span>
-              Progress: {completedWords.size}/{words.length}
+        {/* Word Quick-Selector Pills */}
+        <div className="glass rounded-3xl p-3 mb-5 shadow-lg border-2 border-white/70 overflow-x-auto scrollbar-none">
+          <div className="flex items-center gap-1.5 min-w-max">
+            {THREE_LETTER_WORDS.map((w, idx) => {
+              const isSelected = idx === currentIndex
+              const isDone = completedWords.has(idx)
+              return (
+                <button
+                  key={w.word}
+                  onClick={() => {
+                    playPopSound()
+                    setCurrentIndex(idx)
+                  }}
+                  className={`px-3 py-2 rounded-2xl font-black text-sm transition-all flex items-center gap-1 select-none active:scale-90 cursor-pointer ${
+                    isSelected
+                      ? "bg-orange-600 text-white shadow-lg scale-105 ring-4 ring-orange-200"
+                      : isDone
+                        ? "bg-emerald-100 text-emerald-800 hover:bg-emerald-200"
+                        : "bg-white/80 hover:bg-white text-gray-700 hover:scale-105"
+                  }`}
+                >
+                  <span>{w.emoji}</span>
+                  <span>{w.word}</span>
+                  {isDone && <span className="text-[10px]">⭐</span>}
+                </button>
+              )
+            })}
+          </div>
+        </div>
+
+        {/* Progress Bar */}
+        <div className="glass rounded-2xl p-3.5 mb-5 shadow-md border-2 border-white/60">
+          <div className="flex justify-between items-center text-xs sm:text-sm font-black text-amber-950 mb-1.5">
+            <span className="flex items-center gap-1.5">
+              <Award className="w-4 h-4 text-orange-600" />
+              <span>Words Mastered:</span>
+              <span className="text-orange-700 font-black">
+                {completedWords.size} of {THREE_LETTER_WORDS.length} Words
+              </span>
             </span>
-            <span>{Math.round(progress)}%</span>
+            <span className="bg-orange-100 text-orange-800 px-2 py-0.5 rounded-full">
+              {Math.round(progressPercent)}%
+            </span>
           </div>
-          <Progress value={progress} className="h-3" />
+          <Progress value={progressPercent} className="h-3 bg-orange-100" />
         </div>
 
-        {/* Mode Toggle */}
-        <div className="flex justify-center mb-6">
-          <div className="bg-white/90 backdrop-blur-sm rounded-2xl p-2 flex">
-            <Button
-              onClick={() => setGameMode("learn")}
-              variant={gameMode === "learn" ? "default" : "ghost"}
-              size="lg"
-              className="text-xl"
-            >
-              📚 Learn
-            </Button>
-            <Button
-              onClick={() => setGameMode("spell")}
-              variant={gameMode === "spell" ? "default" : "ghost"}
-              size="lg"
-              className="text-xl"
-            >
-              ✏️ Spell
-            </Button>
-          </div>
-        </div>
-
-        {/* Main Learning Card */}
-        <Card className="bg-white/95 shadow-2xl mb-6">
-          <CardContent className="p-8 text-center">
+        {/* Main Card */}
+        <Card className="glass rounded-3xl shadow-2xl border-4 border-white/80 overflow-hidden mb-6 animate-slideUp">
+          <CardContent className="p-6 sm:p-8">
             {gameMode === "learn" ? (
-              <div className="space-y-6">
-                {/* Word Display */}
-                <div className="text-8xl mb-4">{currentWord.emoji}</div>
-                <div className="text-6xl font-bold text-purple-600 mb-4">{currentWord.word}</div>
+              /* LEARN & BLEND MODE */
+              <div className="max-w-xl mx-auto text-center space-y-6">
+                {/* Big Emoji */}
+                <div className="text-8xl sm:text-9xl select-none animate-bounce-slow">
+                  {currentWord.emoji}
+                </div>
 
-                {/* Meaning */}
-                <div className="bg-yellow-100 rounded-2xl p-4 text-xl text-gray-700">{currentWord.meaning}</div>
-
-                {/* Sound Buttons */}
-                <div className="space-y-4">
-                  <Button onClick={playWord} size="lg" className="text-2xl py-6 px-8 bg-green-500 hover:bg-green-600">
-                    <Volume2 className="w-8 h-8 mr-3" />
-                    Say Word
-                  </Button>
-
-                  <div className="flex justify-center gap-4">
-                    {currentWord.sounds.map((sound, index) => (
-                      <Button
-                        key={index}
-                        onClick={() => playLetter(sound)}
-                        size="lg"
-                        variant="outline"
-                        className="text-3xl py-6 px-6 font-bold"
+                {/* Interactive Sound Tiles */}
+                <div>
+                  <p className="text-xs font-black text-purple-900 uppercase tracking-wide mb-3">
+                    Tap each tile to hear its sound:
+                  </p>
+                  <div className="flex justify-center gap-3 sm:gap-4">
+                    {currentWord.word.split("").map((letter, idx) => (
+                      <button
+                        key={idx}
+                        onClick={() => handlePlaySoundTile(letter, idx)}
+                        type="button"
+                        className={`w-20 h-24 sm:w-24 sm:h-28 rounded-3xl font-black text-4xl sm:text-5xl shadow-lg border-b-4 transition-all active:scale-90 cursor-pointer flex flex-col items-center justify-center ${
+                          activeTileIndex === idx
+                            ? "bg-yellow-300 border-yellow-500 text-yellow-900 scale-110 ring-4 ring-yellow-200"
+                            : "bg-white border-orange-200 hover:bg-orange-50 text-gray-800 hover:scale-105"
+                        }`}
+                        title={`Sound of ${letter}`}
                       >
-                        {sound}
-                      </Button>
+                        <span>{letter}</span>
+                        <span className="text-[10px] font-bold text-gray-400 mt-1 uppercase">
+                          Sound {idx + 1}
+                        </span>
+                      </button>
                     ))}
                   </div>
                 </div>
 
-                {/* Complete Button */}
-                {!completedWords.has(currentIndex) && (
+                {/* Blend & Pronounce Buttons */}
+                <div className="flex items-center justify-center gap-3 flex-wrap">
                   <Button
-                    onClick={markComplete}
+                    onClick={handleBlendWord}
                     size="lg"
-                    className="text-2xl py-6 px-8 bg-gradient-to-r from-yellow-400 to-orange-500 hover:from-yellow-500 hover:to-orange-600 text-white font-bold"
+                    className="btn-chunky text-lg py-5 px-6 rounded-2xl font-black bg-gradient-to-r from-orange-500 to-amber-600 hover:from-orange-600 hover:to-amber-700 text-white shadow-lg active:scale-95"
                   >
-                    <Star className="w-8 h-8 mr-3" />I Know This Word!
+                    <Sparkles className="w-5 h-5 mr-2" />
+                    Blend: {currentWord.word.split("").join(" + ")}!
                   </Button>
-                )}
 
-                {completedWords.has(currentIndex) && (
-                  <div className="text-2xl font-bold text-green-600 flex items-center justify-center">
-                    <Star className="w-8 h-8 mr-2 fill-current" />
-                    Great Job! ⭐
-                  </div>
-                )}
+                  <Button
+                    onClick={handlePlayWord}
+                    size="lg"
+                    variant="outline"
+                    className="rounded-2xl font-black text-lg py-5 px-6 border-2 border-orange-300 text-orange-700 bg-white hover:bg-orange-50 shadow-sm"
+                  >
+                    <Volume2 className="w-5 h-5 mr-2 text-orange-600" />
+                    Say Word
+                  </Button>
+                </div>
+
+                {/* Meaning & Hint Box */}
+                <div className="bg-white/90 rounded-2xl p-4 shadow-sm border border-orange-200">
+                  <span className="text-xs font-black text-orange-700 block mb-0.5">What it means:</span>
+                  <p className="text-base font-bold text-gray-800">{currentWord.meaning}</p>
+                </div>
+
+                {/* Completion Star */}
+                <div>
+                  {!completedWords.has(currentIndex) ? (
+                    <Button
+                      onClick={handleMarkComplete}
+                      size="lg"
+                      className="btn-chunky text-xl py-6 px-8 rounded-2xl font-black bg-gradient-to-r from-yellow-400 via-amber-500 to-orange-500 text-white shadow-xl active:scale-95"
+                    >
+                      <Star className="w-6 h-6 mr-2 fill-yellow-200" />
+                      I Can Read &quot;{currentWord.word}&quot;! ⭐
+                    </Button>
+                  ) : (
+                    <div className="inline-flex items-center gap-2 bg-emerald-100 text-emerald-800 font-black text-lg px-6 py-3 rounded-2xl shadow-sm border border-emerald-300 animate-pop">
+                      <CheckCircle2 className="w-6 h-6 text-emerald-600" />
+                      <span>Word &quot;{currentWord.word}&quot; Mastered! Super Reader!</span>
+                    </div>
+                  )}
+                </div>
               </div>
             ) : (
-              <div className="space-y-6">
-                {/* Spelling Game */}
-                <div className="text-6xl mb-4">{currentWord.emoji}</div>
-                <div className="text-2xl font-bold text-gray-700 mb-4">Spell the word: {currentWord.meaning}</div>
+              /* SPELL & POP MODE */
+              <div className="max-w-xl mx-auto text-center space-y-6">
+                <div className="text-7xl select-none animate-bounce-slow">{currentWord.emoji}</div>
+                <h3 className="text-xl font-black text-gray-800">
+                  Spell the word for this picture!
+                </h3>
 
-                {/* Word Building Area */}
-                <div className="bg-gray-100 rounded-2xl p-6 min-h-24 flex items-center justify-center gap-4">
-                  {draggedLetters.map((letter, index) => (
-                    <Button
-                      key={index}
-                      onClick={() => removeLetter(index)}
-                      size="lg"
-                      className="text-3xl py-6 px-6 font-bold bg-blue-500 hover:bg-blue-600"
-                    >
-                      {letter}
-                    </Button>
-                  ))}
-                  {Array.from({ length: 3 - draggedLetters.length }).map((_, index) => (
-                    <div
-                      key={index}
-                      className="w-16 h-16 border-2 border-dashed border-gray-400 rounded-lg flex items-center justify-center text-gray-400"
-                    >
-                      ?
-                    </div>
-                  ))}
+                {/* Spelling Slots */}
+                <div className="flex justify-center gap-3">
+                  {[0, 1, 2].map((slotIdx) => {
+                    const letter = spelledLetters[slotIdx]
+                    return (
+                      <div
+                        key={slotIdx}
+                        className={`w-20 h-24 sm:w-24 sm:h-28 rounded-3xl font-black text-4xl sm:text-5xl shadow-inner border-4 flex items-center justify-center transition-all ${
+                          letter
+                            ? spellStatus === "correct"
+                              ? "bg-emerald-100 border-emerald-400 text-emerald-800"
+                              : spellStatus === "wrong"
+                                ? "bg-rose-100 border-rose-400 text-rose-800 animate-wiggle"
+                                : "bg-white border-orange-300 text-purple-900"
+                            : "bg-white/60 border-dashed border-gray-300 text-gray-300"
+                        }`}
+                      >
+                        {letter || "?"}
+                      </div>
+                    )
+                  })}
                 </div>
 
-                {/* Available Letters */}
-                <div className="flex flex-wrap justify-center gap-3">
-                  {availableLetters.map((letter, index) => (
-                    <Button
-                      key={index}
-                      onClick={() => addLetter(letter)}
-                      size="lg"
-                      variant="outline"
-                      className="text-2xl py-4 px-4 font-bold"
-                    >
-                      {letter}
-                    </Button>
-                  ))}
-                </div>
-
-                {/* Check Button */}
-                {draggedLetters.length === 3 && (
-                  <Button
-                    onClick={checkSpelling}
-                    size="lg"
-                    className="text-2xl py-6 px-8 bg-gradient-to-r from-green-400 to-blue-500 hover:from-green-500 hover:to-blue-600 text-white font-bold"
-                  >
-                    Check Spelling!
-                  </Button>
+                {/* Status Message */}
+                {spellStatus === "correct" && (
+                  <div className="bg-emerald-100 text-emerald-800 p-3 rounded-2xl font-black text-lg border border-emerald-300 animate-pop">
+                    🎉 Excellent! You spelled {currentWord.word}!
+                  </div>
                 )}
+                {spellStatus === "wrong" && (
+                  <div className="bg-rose-100 text-rose-800 p-3 rounded-2xl font-black text-sm border border-rose-300 animate-wiggle">
+                    Oops! Try sounding it out again: &quot;{currentWord.hint}&quot;
+                  </div>
+                )}
+
+                {/* Available Bubbles */}
+                <div>
+                  <p className="text-xs font-bold text-gray-600 mb-2">Tap bubbles in order:</p>
+                  <div className="flex justify-center gap-2.5 flex-wrap">
+                    {availableBubbles.map((letter, bubbleIdx) => (
+                      <button
+                        key={bubbleIdx}
+                        onClick={() => handleAddLetter(letter, bubbleIdx)}
+                        className="w-14 h-14 sm:w-16 sm:h-16 rounded-2xl font-black text-2xl sm:text-3xl bg-white hover:bg-orange-50 text-orange-900 shadow-md border-2 border-orange-200 transition-all active:scale-75 hover:scale-105 cursor-pointer flex items-center justify-center select-none"
+                      >
+                        {letter}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Reset Button */}
+                <div className="flex justify-center">
+                  <Button
+                    onClick={handleResetSpelling}
+                    variant="outline"
+                    size="sm"
+                    className="rounded-2xl font-bold bg-white/90 text-gray-700 shadow-sm"
+                  >
+                    <RotateCcw className="w-4 h-4 mr-1.5 text-gray-500" />
+                    Clear & Try Again
+                  </Button>
+                </div>
               </div>
             )}
           </CardContent>
         </Card>
 
-        {/* Navigation */}
-        <div className="flex justify-between items-center">
+        {/* Prev / Next Navigation */}
+        <div className="flex justify-between items-center gap-3">
           <Button
-            onClick={prevWord}
+            onClick={handlePrev}
             disabled={currentIndex === 0}
             size="lg"
             variant="outline"
-            className="text-xl py-6 px-8"
+            className="rounded-2xl font-black text-base py-5 px-6 bg-white/90 hover:bg-white border-0 shadow-md active:scale-95 disabled:opacity-50"
           >
-            <ArrowLeft className="w-6 h-6 mr-2" />
+            <ArrowLeft className="w-5 h-5 mr-1.5" />
             Previous
           </Button>
 
-          <div className="text-2xl font-bold text-white">
-            {currentIndex + 1} / {words.length}
+          <div className="bg-white/90 px-4 py-2 rounded-2xl shadow-md border border-white font-black text-orange-950 text-base">
+            {currentIndex + 1} / {THREE_LETTER_WORDS.length}
           </div>
 
           <Button
-            onClick={nextWord}
-            disabled={currentIndex === words.length - 1}
+            onClick={handleNext}
+            disabled={currentIndex === THREE_LETTER_WORDS.length - 1}
             size="lg"
             variant="outline"
-            className="text-xl py-6 px-8"
+            className="rounded-2xl font-black text-base py-5 px-6 bg-white/90 hover:bg-white border-0 shadow-md active:scale-95 disabled:opacity-50"
           >
             Next
-            <ArrowRight className="w-6 h-6 ml-2" />
+            <ArrowRight className="w-5 h-5 ml-1.5" />
           </Button>
         </div>
 
-        {/* Sticker Animation */}
-        {showSticker && (
-          <div className="fixed inset-0 flex items-center justify-center pointer-events-none z-50">
-            <div className="text-8xl animate-bounce">⭐</div>
-          </div>
-        )}
+        {/* Mascot companion footer */}
+        <div className="mt-8 flex justify-center">
+          <Mascot
+            character="bunny"
+            message={`Great reading! CVC words like ${currentWord.word} are the building blocks of reading!`}
+          />
+        </div>
       </div>
     </div>
   )

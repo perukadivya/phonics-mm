@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server"
 import { getSession } from "@/lib/auth"
 import { PLANS, type PlanId } from "@/lib/plans"
-import { sql } from "@vercel/postgres"
+import { createPaymentRecord } from "@/lib/db"
 
 const RAZORPAY_KEY_ID = process.env.RAZORPAY_KEY_ID || ""
 const RAZORPAY_KEY_SECRET = process.env.RAZORPAY_KEY_SECRET || ""
@@ -51,10 +51,7 @@ export async function POST(request: Request) {
         const order = await orderResponse.json()
 
         // Save order to DB
-        await sql`
-      INSERT INTO payments (user_id, razorpay_order_id, plan, amount, currency, status)
-      VALUES (${user.id}, ${order.id}, ${planId}, ${plan.price}, 'INR', 'created')
-    `
+        await createPaymentRecord(user.id, order.id, planId, plan.price)
 
         return NextResponse.json({
             orderId: order.id,

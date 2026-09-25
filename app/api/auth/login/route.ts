@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server"
-import { sql } from "@vercel/postgres"
 import { comparePassword, signToken, setSessionCookie } from "@/lib/auth"
+import { findUserByEmail } from "@/lib/db"
 
 export async function POST(request: Request) {
     try {
@@ -11,14 +11,10 @@ export async function POST(request: Request) {
         }
 
         // Find user
-        const result = await sql`
-      SELECT id, email, name, password_hash FROM users WHERE email = ${email.toLowerCase()}
-    `
-        if (result.rows.length === 0) {
+        const user = await findUserByEmail(email)
+        if (!user) {
             return NextResponse.json({ error: "Invalid email or password" }, { status: 401 })
         }
-
-        const user = result.rows[0]
 
         // Verify password
         const valid = await comparePassword(password, user.password_hash)

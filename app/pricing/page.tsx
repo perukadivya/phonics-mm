@@ -5,6 +5,7 @@ import Link from "next/link"
 import { Button } from "@/components/ui/button"
 import { Home, Check, Crown, Sparkles, Loader2 } from "lucide-react"
 import { PLANS, type PlanId } from "@/lib/plans"
+import { NavBar } from "@/components/nav-bar"
 
 declare global {
     interface Window {
@@ -121,16 +122,15 @@ export default function PricingPage() {
         <div className="min-h-screen bg-gradient-to-br from-violet-600 via-purple-500 to-fuchsia-500 p-4 md:p-6">
             <div className="max-w-6xl mx-auto">
                 {/* Header */}
-                <div className="flex items-center justify-between mb-6">
-                    <Link href="/">
-                        <Button variant="ghost" className="text-white/90 hover:text-white hover:bg-white/10 font-bold text-lg gap-2">
-                            <Home className="w-5 h-5" /> Home
-                        </Button>
-                    </Link>
-                    <h1 className="text-2xl md:text-3xl font-black text-white drop-shadow-lg flex items-center gap-2">
-                        <Crown className="w-7 h-7" /> Choose Your Plan
+                <NavBar />
+                <div className="text-center mb-6">
+                    <h1 className="text-3xl md:text-4xl font-black text-white drop-shadow-lg flex items-center justify-center gap-2">
+                        <Crown className="w-8 h-8 text-yellow-300" />
+                        <span>Choose Your Plan</span>
                     </h1>
-                    <div className="w-24" />
+                    <p className="text-white/80 font-bold text-sm mt-1">
+                        Unlock unlimited AI worksheets & personalized learning
+                    </p>
                 </div>
 
                 {/* Message */}

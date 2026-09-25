@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server"
 import { getSession } from "@/lib/auth"
-import { sql } from "@vercel/postgres"
+import { findPaymentOrder, completePaymentRecord, setUserPlan } from "@/lib/db"
 import crypto from "crypto"
 
 const RAZORPAY_KEY_SECRET = process.env.RAZORPAY_KEY_SECRET || ""
@@ -30,36 +30,20 @@ export async function POST(request: Request) {
         }
 
         //  Look up the order to find the plan
-        const orderResult = await sql`
-      SELECT plan, user_id FROM payments WHERE razorpay_order_id = ${razorpay_order_id} AND user_id = ${user.id}
-    `
-
-        if (orderResult.rows.length === 0) {
+        const order = await findPaymentOrder(razorpay_order_id, user.id)
+        if (!order) {
             return NextResponse.json({ error: "Order not found" }, { status: 404 })
         }
 
-        const planId = orderResult.rows[0].plan
+        const planId = order.plan
 
         // Update payment record
-        await sql`
-      UPDATE payments SET
-        razorpay_payment_id = ${razorpay_payment_id},
-        razorpay_signature = ${razorpay_signature},
-        status = 'paid',
-        verified_at = NOW()
-      WHERE razorpay_order_id = ${razorpay_order_id}
-    `
+        await completePaymentRecord(razorpay_order_id, razorpay_payment_id, razorpay_signature)
 
         // Activate plan — 30 days from now
         const expiresAt = new Date()
         expiresAt.setDate(expiresAt.getDate() + 30)
-
-        await sql`
-      UPDATE users SET
-        plan = ${planId},
-        plan_expires_at = ${expiresAt.toISOString()}
-      WHERE id = ${user.id}
-    `
+        await setUserPlan(user.id, planId, expiresAt.toISOString())
 
         return NextResponse.json({
             success: true,

@@ -32,25 +32,32 @@ export function useProgress() {
     // Load progress from API
     useEffect(() => {
         async function load() {
+            let localData: Partial<UserProgress> = {}
+            try {
+                const saved = typeof window !== "undefined" ? localStorage.getItem("phonics-progress") : null
+                if (saved) {
+                    localData = JSON.parse(saved)
+                }
+            } catch {
+                localData = {}
+            }
+
             try {
                 const res = await fetch("/api/progress")
                 if (res.ok) {
                     const data = await res.json()
-                    setProgress(data.progress)
+                    if (data?.progress) {
+                        setProgress({ ...defaultProgress, ...localData, ...data.progress })
+                        setLoading(false)
+                        return
+                    }
                 }
             } catch (err) {
-                console.error("Failed to load progress:", err)
-                // Fall back to localStorage
-                const saved = localStorage.getItem("phonics-progress")
-                if (saved) {
-                    try {
-                        const parsed = JSON.parse(saved)
-                        setProgress({ ...defaultProgress, ...parsed })
-                    } catch { /* ignore */ }
-                }
-            } finally {
-                setLoading(false)
+                console.warn("Could not fetch remote progress, using local:", err)
             }
+
+            setProgress({ ...defaultProgress, ...localData })
+            setLoading(false)
         }
         load()
     }, [])

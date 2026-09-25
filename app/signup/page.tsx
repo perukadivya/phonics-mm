@@ -158,8 +158,27 @@ export default function SignupPage() {
                         </Button>
                     </form>
 
-                    <div className="text-center mt-6">
-                        <p className="text-gray-500 font-semibold">
+                    <div className="relative my-4">
+                        <div className="absolute inset-0 flex items-center">
+                            <span className="w-full border-t border-emerald-200/60" />
+                        </div>
+                        <div className="relative flex justify-center text-xs uppercase">
+                            <span className="bg-white px-2 text-gray-400 font-bold rounded-full">Or</span>
+                        </div>
+                    </div>
+
+                    <Link href="/" className="block">
+                        <Button
+                            type="button"
+                            variant="outline"
+                            className="w-full py-5 text-base font-black rounded-2xl border-2 border-emerald-200 bg-white hover:bg-emerald-50 text-emerald-700 shadow-sm"
+                        >
+                            🎈 Play as Guest (No Account Needed)
+                        </Button>
+                    </Link>
+
+                    <div className="text-center mt-5">
+                        <p className="text-gray-500 font-semibold text-sm">
                             Already have an account?{" "}
                             <Link href="/login" className="text-emerald-600 font-black hover:underline">
                                 Log In

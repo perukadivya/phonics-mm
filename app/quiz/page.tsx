@@ -4,400 +4,479 @@ import { useState, useEffect } from "react"
 import { Card, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Progress } from "@/components/ui/progress"
-import { Input } from "@/components/ui/input"
-import { Volume2, Home, RefreshCw, Check, X, Crown } from "lucide-react"
-import Link from "next/link"
-import { useRouter } from "next/navigation"
+import {
+  Volume2,
+  Sparkles,
+  CheckCircle2,
+  XCircle,
+  Trophy,
+  RotateCcw,
+  Star,
+  Brain,
+  HelpCircle,
+} from "lucide-react"
+import { NavBar } from "@/components/nav-bar"
+import { Mascot } from "@/components/mascot"
+import { Confetti } from "@/components/confetti"
 import { useProgress } from "@/hooks/useProgress"
+import { QUIZ_BANK, type PhonicsQuizItem } from "@/lib/phonics-data"
+import {
+  playPopSound,
+  playStarSound,
+  playSuccessSound,
+  playWrongSound,
+  playCheerSound,
+  playClickSound,
+  speakText,
+} from "@/lib/audio"
 
-interface QuizQuestion {
-  question: string
-  type: "multiple-choice" | "spelling"
-  options?: string[]
-  correct?: number
-  answer?: string
-  explanation?: string
-  hint?: string
-}
+type QuizLevel = "letters" | "three-letter" | "four-letter" | "five-letter" | "sentences"
+
+const LEVELS: { key: QuizLevel; label: string; emoji: string; desc: string }[] = [
+  { key: "letters", label: "Letters", emoji: "🔤", desc: "Letter sounds" },
+  { key: "three-letter", label: "3-Letter", emoji: "📝", desc: "CVC words" },
+  { key: "four-letter", label: "4-Letter", emoji: "📚", desc: "Blends & digraphs" },
+  { key: "five-letter", label: "5-Letter", emoji: "🌟", desc: "Longer words" },
+  { key: "sentences", label: "Sentences", emoji: "💬", desc: "Reading comprehension" },
+]
 
 export default function QuizPage() {
-  const router = useRouter()
   const { progress: userProgress, updateProgress } = useProgress()
-  const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0)
-  const [questions, setQuestions] = useState<QuizQuestion[]>([])
+  const [selectedLevel, setSelectedLevel] = useState<QuizLevel>("letters")
+  const [questions, setQuestions] = useState<PhonicsQuizItem[]>(QUIZ_BANK.letters)
+  const [currentIndex, setCurrentIndex] = useState(0)
   const [userAnswers, setUserAnswers] = useState<(string | number)[]>([])
-  const [showResult, setShowResult] = useState(false)
-  const [score, setScore] = useState(0)
-  const [isGenerating, setIsGenerating] = useState(false)
-  const [selectedLevel, setSelectedLevel] = useState<
-    "letters" | "three-letter" | "four-letter" | "five-letter" | "sentences"
-  >("letters")
-  const [currentAnswer, setCurrentAnswer] = useState("")
+  const [selectedOption, setSelectedOption] = useState<number | null>(null)
+  const [spelledAnswer, setSpelledAnswer] = useState<string[]>([])
   const [showFeedback, setShowFeedback] = useState(false)
-  const [showUpgradeModal, setShowUpgradeModal] = useState(false)
-  const [usageInfo, setUsageInfo] = useState<{ used: number; limit: number } | null>(null)
+  const [isAnswerCorrect, setIsAnswerCorrect] = useState(false)
+  const [score, setScore] = useState(0)
+  const [isCompleted, setIsCompleted] = useState(false)
+  const [isLoading, setIsLoading] = useState(false)
+  const [showConfetti, setShowConfetti] = useState(false)
 
-  const currentQuestion = questions[currentQuestionIndex]
-
-  useEffect(() => {
-    // Check usage on mount
-    fetch("/api/usage/check", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ type: "quiz" }),
-    })
-      .then((r) => r.json())
-      .then((data) => {
-        if (typeof data.used === "number" && typeof data.limit === "number") {
-          setUsageInfo({ used: data.used, limit: data.limit })
-        }
-      })
-      .catch(() => { })
-  }, [])
+  // Ensure current question is always defined
+  const currentQuestion: PhonicsQuizItem = questions[currentIndex] || QUIZ_BANK.letters[0]
 
   useEffect(() => {
-    generateQuiz()
+    loadQuestionsForLevel(selectedLevel)
   }, [selectedLevel])
 
-  const generateQuiz = async () => {
-    setIsGenerating(true)
-    setCurrentQuestionIndex(0)
+  const loadQuestionsForLevel = async (level: QuizLevel) => {
+    setIsLoading(true)
+    setCurrentIndex(0)
     setUserAnswers([])
-    setShowResult(false)
-    setScore(0)
+    setSelectedOption(null)
+    setSpelledAnswer([])
     setShowFeedback(false)
+    setScore(0)
+    setIsCompleted(false)
+
+    // Immediate fallback from curated bank
+    const fallback = QUIZ_BANK[level] || QUIZ_BANK.letters
+    setQuestions(fallback)
 
     try {
-      const response = await fetch("/api/generate-content", {
+      const res = await fetch("/api/generate-content", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ type: "quiz", level: selectedLevel, count: 10 }),
+        body: JSON.stringify({ type: "quiz", level, count: 5 }),
       })
-
-      const data = await response.json()
-
-      if (response.status === 402 && data.usageLimitReached) {
-        setUsageInfo({ used: data.used, limit: data.limit })
-        setShowUpgradeModal(true)
-        setIsGenerating(false)
-        return
-      }
-
-      if (response.ok) {
-        setQuestions(data.content)
-        if (usageInfo) {
-          setUsageInfo({ ...usageInfo, used: usageInfo.used + 1 })
+      if (res.ok) {
+        const data = await res.json()
+        if (Array.isArray(data?.content) && data.content.length > 0) {
+          setQuestions(data.content)
         }
       }
-    } catch (error) {
-      console.error("Failed to generate quiz:", error)
-      // Fallback questions
-      setQuestions([
-        {
-          question: "What sound does the letter B make?",
-          type: "multiple-choice",
-          options: ["buh", "bee", "bay", "boo"],
-          correct: 0,
-          explanation: "B makes the 'buh' sound!",
-        },
-      ])
+    } catch {
+      // Fallback already active
     } finally {
-      setIsGenerating(false)
+      setIsLoading(false)
     }
   }
 
-  const playQuestion = () => {
-    const utterance = new SpeechSynthesisUtterance(currentQuestion.question)
-    utterance.rate = 0.8
-    speechSynthesis.speak(utterance)
+  const handlePlayPrompt = () => {
+    playPopSound()
+    speakText(currentQuestion.soundPrompt || currentQuestion.question, { rate: 0.82, pitch: 1.2 })
   }
 
-  const handleMultipleChoice = (optionIndex: number) => {
-    const newAnswers = [...userAnswers]
-    newAnswers[currentQuestionIndex] = optionIndex
-    setUserAnswers(newAnswers)
+  const handleSelectOption = (idx: number) => {
+    if (showFeedback) return
+    setSelectedOption(idx)
+    playPopSound()
+
+    const isCorrect = idx === currentQuestion.correct
+    setIsAnswerCorrect(isCorrect)
     setShowFeedback(true)
 
-    setTimeout(() => {
-      nextQuestion()
-    }, 2000)
-  }
-
-  const handleSpelling = () => {
-    const newAnswers = [...userAnswers]
-    newAnswers[currentQuestionIndex] = currentAnswer.toUpperCase()
-    setUserAnswers(newAnswers)
-    setShowFeedback(true)
-
-    setTimeout(() => {
-      nextQuestion()
-    }, 2000)
-  }
-
-  const nextQuestion = () => {
-    setShowFeedback(false)
-    setCurrentAnswer("")
-
-    if (currentQuestionIndex < questions.length - 1) {
-      setCurrentQuestionIndex(currentQuestionIndex + 1)
+    if (isCorrect) {
+      playSuccessSound()
+      setScore((s) => s + 1)
     } else {
-      calculateScore()
+      playWrongSound()
     }
   }
 
-  const calculateScore = () => {
-    let correct = 0
-    questions.forEach((question, index) => {
-      const userAnswer = userAnswers[index]
-      if (question.type === "multiple-choice" && userAnswer === question.correct) {
-        correct++
-      } else if (question.type === "spelling" && userAnswer === question.answer) {
-        correct++
+  const handleAddSpellingLetter = (letter: string) => {
+    if (showFeedback) return
+    playPopSound()
+    const targetLength = currentQuestion.answer?.length || 3
+    if (spelledAnswer.length >= targetLength) return
+
+    const updated = [...spelledAnswer, letter]
+    setSpelledAnswer(updated)
+
+    if (updated.length === targetLength) {
+      const spelling = updated.join("")
+      const isCorrect = spelling === currentQuestion.answer
+      setIsAnswerCorrect(isCorrect)
+      setShowFeedback(true)
+
+      if (isCorrect) {
+        playSuccessSound()
+        setScore((s) => s + 1)
+      } else {
+        playWrongSound()
       }
-    })
-    setScore(correct)
-    setShowResult(true)
-
-    // Update progress
-    updateProgress({ totalStickers: userProgress.totalStickers + Math.floor(correct / 2) })
-  }
-
-  const isCorrect = () => {
-    const userAnswer = userAnswers[currentQuestionIndex]
-    if (currentQuestion.type === "multiple-choice") {
-      return userAnswer === currentQuestion.correct
-    } else {
-      return userAnswer === currentQuestion.answer
     }
   }
 
-  const progress = ((currentQuestionIndex + (showFeedback ? 1 : 0)) / questions.length) * 100
-
-  // Upgrade Modal
-  if (showUpgradeModal) {
-    return (
-      <div className="min-h-screen bg-gradient-to-br from-indigo-400 via-purple-400 to-pink-400 p-4 flex items-center justify-center">
-        <div className="bg-white rounded-3xl shadow-2xl max-w-md w-full p-8 text-center animate-fadeIn">
-          <div className="text-6xl mb-4">🔒</div>
-          <h3 className="text-2xl font-black text-gray-800 mb-2">Free Quiz Limit Reached!</h3>
-          <p className="text-gray-500 mb-1">
-            You&apos;ve used all <span className="font-bold text-purple-600">{usageInfo?.limit}</span> free quiz questions.
-          </p>
-          <p className="text-gray-400 text-sm mb-6">Upgrade to unlock unlimited quizzes!</p>
-          <div className="space-y-3">
-            <Button
-              onClick={() => router.push("/pricing")}
-              className="w-full py-5 rounded-2xl font-black bg-gradient-to-r from-purple-600 to-fuchsia-600 text-white shadow-lg hover:shadow-xl"
-            >
-              <Crown className="w-5 h-5 mr-2" />
-              ✨ View Plans — from ₹99/mo
-            </Button>
-            <Button
-              variant="outline"
-              onClick={() => setShowUpgradeModal(false)}
-              className="w-full py-4 rounded-2xl font-bold text-gray-400"
-            >
-              Maybe Later
-            </Button>
-            <Link href="/">
-              <Button variant="ghost" className="w-full text-gray-400 font-semibold">
-                <Home className="w-4 h-4 mr-2" /> Back to Home
-              </Button>
-            </Link>
-          </div>
-        </div>
-      </div>
-    )
+  const handleClearSpelling = () => {
+    playPopSound()
+    setSpelledAnswer([])
+    setShowFeedback(false)
   }
 
-  if (isGenerating) {
-    return (
-      <div className="min-h-screen bg-gradient-to-br from-indigo-400 via-purple-400 to-pink-400 p-4 flex items-center justify-center">
-        <Card className="bg-white/95 shadow-2xl p-8">
-          <CardContent className="text-center">
-            <RefreshCw className="w-16 h-16 animate-spin mx-auto mb-4 text-purple-600" />
-            <h2 className="text-3xl font-bold text-gray-800 mb-2">Generating Quiz...</h2>
-            <p className="text-xl text-gray-600">Creating personalized questions for you!</p>
-          </CardContent>
-        </Card>
-      </div>
-    )
+  const handleNextQuestion = () => {
+    playPopSound()
+    if (currentIndex < questions.length - 1) {
+      setCurrentIndex((prev) => prev + 1)
+      setSelectedOption(null)
+      setSpelledAnswer([])
+      setShowFeedback(false)
+    } else {
+      // Quiz finished
+      setIsCompleted(true)
+      playCheerSound()
+      setShowConfetti(true)
+
+      // Award stars to progress
+      const starsEarned = score + (isAnswerCorrect ? 1 : 0)
+      if (starsEarned > 0) {
+        updateProgress({ totalStickers: userProgress.totalStickers + starsEarned })
+      }
+    }
   }
 
-  if (showResult) {
-    return (
-      <div className="min-h-screen bg-gradient-to-br from-indigo-400 via-purple-400 to-pink-400 p-4">
-        <div className="max-w-4xl mx-auto">
-          <Card className="bg-white/95 shadow-2xl">
-            <CardContent className="p-8 text-center">
-              <div className="text-8xl mb-6">🎉</div>
-              <h2 className="text-4xl font-bold text-gray-800 mb-4">Quiz Complete!</h2>
-              <div className="text-6xl font-bold text-purple-600 mb-4">
-                {score}/{questions.length}
-              </div>
-              <p className="text-2xl text-gray-600 mb-6">
-                {score === questions.length
-                  ? "Perfect! You're amazing!"
-                  : score >= questions.length * 0.8
-                    ? "Great job! Keep it up!"
-                    : score >= questions.length * 0.6
-                      ? "Good work! Practice more!"
-                      : "Keep trying! You'll get better!"}
-              </p>
-
-              <div className="space-y-4">
-                <Button onClick={generateQuiz} size="lg" className="text-2xl py-6 px-8 bg-green-500 hover:bg-green-600">
-                  <RefreshCw className="w-8 h-8 mr-3" />
-                  Try Again
-                </Button>
-
-                <Link href="/">
-                  <Button variant="outline" size="lg" className="text-2xl py-6 px-8">
-                    <Home className="w-8 h-8 mr-3" />
-                    Back Home
-                  </Button>
-                </Link>
-              </div>
-            </CardContent>
-          </Card>
-        </div>
-      </div>
-    )
+  const handleRestart = () => {
+    playPopSound()
+    loadQuestionsForLevel(selectedLevel)
   }
+
+  const progressPercent = ((currentIndex + (showFeedback ? 1 : 0)) / questions.length) * 100
+
+  // Keyboard for spelling questions
+  const spellingOptions = currentQuestion.answer
+    ? [
+        ...currentQuestion.answer.split(""),
+        ..."BCDFGHJKLMNPQRSTVWXYZ".split("").filter((l) => !currentQuestion.answer?.includes(l)).slice(0, 4),
+      ].sort(() => 0.5 - Math.random())
+    : []
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-indigo-400 via-purple-400 to-pink-400 p-4">
-      <div className="max-w-4xl mx-auto">
-        {/* Header */}
-        <div className="flex items-center justify-between mb-6">
-          <Link href="/">
-            <Button variant="outline" size="lg" className="text-xl">
-              <Home className="w-6 h-6 mr-2" />
-              Home
-            </Button>
-          </Link>
-          <h1 className="text-4xl font-bold text-white text-center">🧠 Phonics Quiz 🧠</h1>
-          <Button onClick={generateQuiz} variant="outline" size="lg" className="text-xl">
-            <RefreshCw className="w-6 h-6 mr-2" />
+    <div className="min-h-screen bg-gradient-to-br from-fuchsia-500 via-purple-500 to-pink-500 p-3 sm:p-5 relative overflow-hidden">
+      <Confetti active={showConfetti} onComplete={() => setShowConfetti(false)} />
+
+      <div className="max-w-4xl mx-auto relative z-10">
+        <NavBar />
+
+        {/* Top Header */}
+        <div className="flex items-center justify-between gap-3 mb-4 flex-wrap">
+          <div>
+            <h1 className="text-3xl sm:text-4xl font-black text-white drop-shadow-md flex items-center gap-2">
+              <span>🧠</span>
+              <span>AI Phonics Quiz</span>
+            </h1>
+            <p className="text-xs sm:text-sm font-bold text-white/90">
+              Listen, sound out, and choose the correct answer to win stickers!
+            </p>
+          </div>
+
+          <Button
+            onClick={handleRestart}
+            variant="outline"
+            size="sm"
+            className="rounded-2xl font-bold bg-white/90 hover:bg-white text-purple-700 shadow-md border-0 active:scale-95"
+          >
+            <RotateCcw className="w-4 h-4 mr-1.5" />
             New Quiz
           </Button>
         </div>
 
-        {/* Level Selector */}
-        <div className="bg-white/90 backdrop-blur-sm rounded-2xl p-4 mb-6">
-          <div className="flex flex-wrap justify-center gap-2">
-            {(["letters", "three-letter", "four-letter", "five-letter", "sentences"] as const).map((level) => (
-              <Button
-                key={level}
-                onClick={() => setSelectedLevel(level)}
-                variant={selectedLevel === level ? "default" : "outline"}
-                className="text-lg"
-              >
-                {level.charAt(0).toUpperCase() + level.slice(1).replace("-", " ")}
-              </Button>
-            ))}
+        {/* Level Switcher */}
+        <div className="glass rounded-3xl p-3 mb-5 shadow-lg border-2 border-white/70 overflow-x-auto scrollbar-none">
+          <div className="flex items-center gap-2 min-w-max">
+            {LEVELS.map((lvl) => {
+              const active = selectedLevel === lvl.key
+              return (
+                <button
+                  key={lvl.key}
+                  onClick={() => {
+                    playPopSound()
+                    setSelectedLevel(lvl.key)
+                  }}
+                  className={`px-3.5 py-2 rounded-2xl font-black text-xs sm:text-sm transition-all flex items-center gap-1.5 select-none active:scale-95 cursor-pointer ${
+                    active
+                      ? "bg-fuchsia-600 text-white shadow-md scale-105 ring-4 ring-fuchsia-200"
+                      : "bg-white/80 hover:bg-white text-purple-900"
+                  }`}
+                >
+                  <span>{lvl.emoji}</span>
+                  <span>{lvl.label}</span>
+                </button>
+              )
+            })}
           </div>
         </div>
 
-        {/* Progress */}
-        <div className="bg-white/90 backdrop-blur-sm rounded-2xl p-4 mb-6">
-          <div className="flex justify-between text-lg font-semibold mb-2">
-            <span>
-              Question {currentQuestionIndex + 1}/{questions.length}
-            </span>
-            <span>{Math.round(progress)}%</span>
-          </div>
-          <Progress value={progress} className="h-3" />
-        </div>
+        {!isCompleted ? (
+          <>
+            {/* Progress Bar */}
+            <div className="glass rounded-2xl p-3.5 mb-5 shadow-md border-2 border-white/60">
+              <div className="flex justify-between items-center text-xs sm:text-sm font-black text-purple-950 mb-1.5">
+                <span>
+                  Question {currentIndex + 1} of {questions.length}
+                </span>
+                <span className="flex items-center gap-1 text-purple-700">
+                  <Star className="w-4 h-4 fill-yellow-400 text-yellow-500" />
+                  <span>Score: {score}</span>
+                </span>
+              </div>
+              <Progress value={progressPercent} className="h-3 bg-purple-100" />
+            </div>
 
-        {/* Question Card */}
-        {currentQuestion && (
-          <Card className="bg-white/95 shadow-2xl mb-6">
-            <CardContent className="p-8">
-              <div className="space-y-6">
-                {/* Question */}
-                <div className="text-center">
-                  <div className="text-3xl font-bold text-gray-800 mb-4">{currentQuestion.question}</div>
-                  <Button onClick={playQuestion} size="lg" className="text-xl py-4 px-6 bg-blue-500 hover:bg-blue-600">
-                    <Volume2 className="w-6 h-6 mr-2" />
-                    Read Question
-                  </Button>
-                </div>
+            {/* Quiz Question Card */}
+            <Card className="glass rounded-3xl shadow-2xl border-4 border-white/80 overflow-hidden mb-6 animate-slideUp">
+              <CardContent className="p-6 sm:p-8">
+                <div className="max-w-xl mx-auto space-y-6">
+                  {/* Question & Audio Read Aloud */}
+                  <div className="text-center space-y-3">
+                    <h2 className="text-2xl sm:text-3xl font-black text-gray-800 leading-snug">
+                      {currentQuestion.question}
+                    </h2>
 
-                {/* Answer Options */}
-                {currentQuestion.type === "multiple-choice" && !showFeedback && (
-                  <div className="grid grid-cols-2 gap-4">
-                    {currentQuestion.options?.map((option, index) => (
-                      <Button
-                        key={index}
-                        onClick={() => handleMultipleChoice(index)}
-                        size="lg"
-                        variant="outline"
-                        className="text-2xl py-6 px-6 font-bold"
-                      >
-                        {option}
-                      </Button>
-                    ))}
+                    <Button
+                      onClick={handlePlayPrompt}
+                      size="sm"
+                      className="rounded-full bg-purple-100 hover:bg-purple-200 text-purple-800 font-bold px-4 py-2 border border-purple-200 active:scale-95"
+                    >
+                      <Volume2 className="w-4 h-4 mr-1.5 text-purple-600" />
+                      Listen Aloud 🔊
+                    </Button>
                   </div>
-                )}
 
-                {/* Spelling Input */}
-                {currentQuestion.type === "spelling" && !showFeedback && (
-                  <div className="space-y-4">
-                    {currentQuestion.hint && (
-                      <div className="bg-yellow-100 rounded-2xl p-4 text-lg text-gray-700">
-                        💡 Hint: {currentQuestion.hint}
-                      </div>
-                    )}
-                    <Input
-                      value={currentAnswer}
-                      onChange={(e) => setCurrentAnswer(e.target.value)}
-                      placeholder="Type your answer here..."
-                      className="text-2xl py-6 text-center font-bold"
-                      onKeyPress={(e) => {
-                        if (e.key === "Enter" && currentAnswer.trim()) {
-                          handleSpelling()
+                  {/* Multiple Choice Layout */}
+                  {currentQuestion.type === "multiple-choice" && currentQuestion.options && (
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      {currentQuestion.options.map((opt, idx) => {
+                        const isChosen = selectedOption === idx
+                        const isCorrectOpt = idx === currentQuestion.correct
+
+                        let btnStyle = "bg-white hover:bg-purple-50 text-gray-800 border-2 border-purple-100"
+                        if (showFeedback) {
+                          if (isCorrectOpt) {
+                            btnStyle = "bg-emerald-100 text-emerald-800 border-2 border-emerald-400 shadow-md ring-2 ring-emerald-300"
+                          } else if (isChosen) {
+                            btnStyle = "bg-rose-100 text-rose-800 border-2 border-rose-400 ring-2 ring-rose-200"
+                          } else {
+                            btnStyle = "bg-white/60 text-gray-400 border-gray-100 opacity-60"
+                          }
                         }
-                      }}
-                    />
-                    {currentAnswer.trim() && (
+
+                        return (
+                          <button
+                            key={idx}
+                            onClick={() => handleSelectOption(idx)}
+                            disabled={showFeedback}
+                            className={`p-4 rounded-2xl font-black text-xl sm:text-2xl text-center shadow-md transition-all active:scale-95 cursor-pointer flex items-center justify-between ${btnStyle}`}
+                          >
+                            <span className="w-8 h-8 rounded-full bg-purple-100 text-purple-800 text-sm flex items-center justify-center font-bold">
+                              {String.fromCharCode(65 + idx)}
+                            </span>
+                            <span className="flex-1 text-center font-black">{opt}</span>
+                            {showFeedback && isCorrectOpt && (
+                              <CheckCircle2 className="w-6 h-6 text-emerald-600 shrink-0" />
+                            )}
+                            {showFeedback && isChosen && !isCorrectOpt && (
+                              <XCircle className="w-6 h-6 text-rose-500 shrink-0" />
+                            )}
+                          </button>
+                        )
+                      })}
+                    </div>
+                  )}
+
+                  {/* Spelling Question Layout */}
+                  {currentQuestion.type === "spelling" && currentQuestion.answer && (
+                    <div className="space-y-4">
+                      {/* Slots */}
+                      <div className="flex justify-center gap-2">
+                        {currentQuestion.answer.split("").map((_, slotIdx) => {
+                          const char = spelledAnswer[slotIdx]
+                          return (
+                            <div
+                              key={slotIdx}
+                              className={`w-16 h-20 rounded-2xl font-black text-3xl shadow-inner border-4 flex items-center justify-center transition-all ${
+                                char
+                                  ? showFeedback
+                                    ? isAnswerCorrect
+                                      ? "bg-emerald-100 border-emerald-400 text-emerald-800"
+                                      : "bg-rose-100 border-rose-400 text-rose-800"
+                                    : "bg-white border-purple-300 text-purple-900"
+                                  : "bg-white/60 border-dashed border-gray-300 text-gray-300"
+                              }`}
+                            >
+                              {char || "?"}
+                            </div>
+                          )
+                        })}
+                      </div>
+
+                      {/* Letter Tiles */}
+                      {!showFeedback && (
+                        <div className="flex justify-center gap-2 flex-wrap">
+                          {spellingOptions.map((letter, i) => (
+                            <button
+                              key={i}
+                              onClick={() => handleAddSpellingLetter(letter)}
+                              className="w-12 h-12 rounded-2xl font-black text-xl bg-white hover:bg-purple-100 text-purple-900 shadow-md border-2 border-purple-200 transition-all active:scale-75 cursor-pointer"
+                            >
+                              {letter}
+                            </button>
+                          ))}
+                        </div>
+                      )}
+
+                      {!showFeedback && spelledAnswer.length > 0 && (
+                        <div className="text-center">
+                          <Button
+                            onClick={handleClearSpelling}
+                            variant="outline"
+                            size="sm"
+                            className="rounded-xl text-xs bg-white text-gray-600"
+                          >
+                            Clear Letters
+                          </Button>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Feedback Banner */}
+                  {showFeedback && (
+                    <div
+                      className={`p-4 rounded-2xl animate-pop ${
+                        isAnswerCorrect
+                          ? "bg-emerald-100 border-2 border-emerald-300 text-emerald-900"
+                          : "bg-amber-100 border-2 border-amber-300 text-amber-900"
+                      }`}
+                    >
+                      <div className="flex items-center gap-2 font-black text-lg mb-1">
+                        {isAnswerCorrect ? (
+                          <>
+                            <CheckCircle2 className="w-6 h-6 text-emerald-600" />
+                            <span>Correct! Fantastic phonics skill!</span>
+                          </>
+                        ) : (
+                          <>
+                            <HelpCircle className="w-6 h-6 text-amber-600" />
+                            <span>Good try! Keep learning!</span>
+                          </>
+                        )}
+                      </div>
+                      <p className="text-sm font-semibold">{currentQuestion.explanation}</p>
+                    </div>
+                  )}
+
+                  {/* Next Question Button */}
+                  {showFeedback && (
+                    <div className="text-center pt-2">
                       <Button
-                        onClick={handleSpelling}
+                        onClick={handleNextQuestion}
                         size="lg"
-                        className="w-full text-2xl py-6 bg-green-500 hover:bg-green-600"
+                        className="btn-chunky text-xl py-6 px-10 rounded-2xl font-black bg-gradient-to-r from-purple-600 to-fuchsia-600 text-white shadow-xl active:scale-95"
                       >
-                        Submit Answer
+                        {currentIndex < questions.length - 1 ? "Next Question →" : "See Results! 🏆"}
                       </Button>
-                    )}
-                  </div>
-                )}
+                    </div>
+                  )}
+                </div>
+              </CardContent>
+            </Card>
+          </>
+        ) : (
+          /* QUIZ COMPLETED CELEBRATION CARD */
+          <Card className="glass rounded-3xl shadow-2xl border-4 border-white/80 overflow-hidden mb-6 animate-pop text-center p-8">
+            <CardContent className="space-y-6">
+              <div className="text-8xl select-none animate-bounce-slow">🏆</div>
+              <div>
+                <h2 className="text-4xl font-black text-purple-950 mb-1">Quiz Completed!</h2>
+                <p className="text-base font-bold text-purple-700">
+                  You scored <strong className="text-3xl text-yellow-600">{score}</strong> out of{" "}
+                  <strong className="text-3xl text-purple-950">{questions.length}</strong>!
+                </p>
+              </div>
 
-                {/* Feedback */}
-                {showFeedback && (
-                  <div className="text-center space-y-4">
-                    {isCorrect() ? (
-                      <div className="text-3xl font-bold text-green-600 flex items-center justify-center animate-bounce">
-                        <Check className="w-8 h-8 mr-2" />
-                        Correct! Great job! 🎉
-                      </div>
-                    ) : (
-                      <div className="text-2xl font-bold text-red-600 flex items-center justify-center">
-                        <X className="w-6 h-6 mr-2" />
-                        Not quite right. Keep trying! 💪
-                      </div>
-                    )}
+              {/* Star Rating Display */}
+              <div className="flex justify-center gap-2">
+                {[1, 2, 3].map((starIdx) => {
+                  const hasStar = score >= starIdx * Math.floor(questions.length / 3)
+                  return (
+                    <Star
+                      key={starIdx}
+                      className={`w-12 h-12 transition-all ${
+                        hasStar
+                          ? "text-yellow-400 fill-yellow-400 animate-sparkle"
+                          : "text-gray-300"
+                      }`}
+                    />
+                  )
+                })}
+              </div>
 
-                    {currentQuestion.explanation && (
-                      <div className="bg-blue-100 rounded-2xl p-4 text-lg text-gray-700">
-                        {currentQuestion.explanation}
-                      </div>
-                    )}
-                  </div>
-                )}
+              {/* Message */}
+              <div className="bg-white/90 rounded-2xl p-4 shadow-sm border border-purple-200 max-w-md mx-auto">
+                <p className="font-bold text-gray-800 text-sm">
+                  {score === questions.length
+                    ? "🌟 PERFECT SCORE! You are a Phonics Grandmaster! All stars awarded!"
+                    : score >= questions.length / 2
+                      ? "🎉 Super job! You have wonderful phonics instincts. Keep practicing!"
+                      : "💪 Nice practice! Every quiz makes your reading superpowers grow!"}
+                </p>
+              </div>
+
+              {/* Actions */}
+              <div className="flex justify-center gap-3 flex-wrap">
+                <Button
+                  onClick={handleRestart}
+                  size="lg"
+                  className="rounded-2xl font-black text-lg py-5 px-8 bg-purple-600 hover:bg-purple-700 text-white shadow-lg active:scale-95"
+                >
+                  <RotateCcw className="w-5 h-5 mr-2" />
+                  Play Again
+                </Button>
               </div>
             </CardContent>
           </Card>
         )}
+
+        {/* Mascot */}
+        <div className="mt-8 flex justify-center">
+          <Mascot
+            character="owl"
+            message="Phonics quizzes train your brain to hear sounds in every word! You are doing great!"
+          />
+        </div>
       </div>
     </div>
   )

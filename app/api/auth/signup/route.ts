@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server"
-import { sql } from "@vercel/postgres"
 import { hashPassword, signToken, setSessionCookie } from "@/lib/auth"
+import { findUserByEmail, createUser } from "@/lib/db"
 
 export async function POST(request: Request) {
     try {
@@ -15,22 +15,15 @@ export async function POST(request: Request) {
         }
 
         // Check if user already exists
-        const existing = await sql`SELECT id FROM users WHERE email = ${email.toLowerCase()}`
-        if (existing.rows.length > 0) {
+        const existing = await findUserByEmail(email)
+        if (existing) {
             return NextResponse.json({ error: "An account with this email already exists" }, { status: 409 })
         }
 
         // Create user
         const passwordHash = await hashPassword(password)
-        const result = await sql`
-      INSERT INTO users (email, password_hash, name)
-      VALUES (${email.toLowerCase()}, ${passwordHash}, ${name || ''})
-      RETURNING id, email, name
-    `
-        const user = result.rows[0]
+        const user = await createUser(email, passwordHash, name || "")
 
-        // Create empty progress row
-        await sql`INSERT INTO user_progress (user_id) VALUES (${user.id})`
 
         // Set session cookie
         const token = await signToken({ id: user.id, email: user.email, name: user.name || "" })

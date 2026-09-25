@@ -10,103 +10,113 @@ import {
   generateMatchingItems,
   generateFillBlankItems,
 } from "@/lib/ai-generator"
-import type { Difficulty } from "@/lib/ai-generator"
 import { getSession } from "@/lib/auth"
 import { checkUsage, incrementUsage, getClientIP } from "@/lib/usage"
 
-// Worksheet-type content types that consume worksheet quota
-const WORKSHEET_TYPES = ["letters", "three-letter-words", "four-letter-words", "five-letter-words", "sentences", "tracing", "matching", "fill-blank"]
-const QUIZ_TYPES = ["quiz"]
+const WORKSHEET_EXPORT_TYPES = ["tracing", "matching", "fill-blank"]
 
 export async function POST(request: NextRequest) {
   try {
     const user = await getSession()
-    if (!user) {
-      return NextResponse.json({ error: "Please log in first" }, { status: 401 })
-    }
+    const userId = user ? user.id : 0
+    const ip = await getClientIP(request)
 
     const body = await request.json()
-    const { type, count = 5, level, difficulty = "easy" } = body as {
+    const { type, count = 5, level, isWorksheet } = body as {
       type: string
       count?: number
       level?: "letters" | "three-letter" | "four-letter" | "five-letter" | "sentences"
-      difficulty?: Difficulty
+      difficulty?: "easy" | "medium" | "hard"
+      isWorksheet?: boolean
     }
 
-    // Check usage limits for worksheets and quiz
-    const ip = await getClientIP(request)
+    // Only apply rate limiting quota if explicitly generating a printable worksheet or quiz
+    const shouldCheckWorksheetQuota = isWorksheet || WORKSHEET_EXPORT_TYPES.includes(type)
+    const isQuiz = type === "quiz"
 
-    if (WORKSHEET_TYPES.includes(type)) {
-      const usageCheck = await checkUsage(user.id, ip, "worksheets")
-      if (!usageCheck.allowed) {
-        return NextResponse.json({
-          error: usageCheck.reason,
-          usageLimitReached: true,
-          used: usageCheck.used,
-          limit: usageCheck.limit,
-          planRequired: usageCheck.planRequired,
-        }, { status: 402 })
+    if (shouldCheckWorksheetQuota) {
+      const usage = await checkUsage(userId, ip, "worksheets")
+      if (!usage.allowed) {
+        return NextResponse.json(
+          {
+            error: usage.reason,
+            usageLimitReached: true,
+            used: usage.used,
+            limit: usage.limit,
+            planRequired: usage.planRequired,
+          },
+          { status: 402 }
+        )
       }
     }
 
-    if (QUIZ_TYPES.includes(type)) {
-      const usageCheck = await checkUsage(user.id, ip, "quiz")
-      if (!usageCheck.allowed) {
-        return NextResponse.json({
-          error: usageCheck.reason,
-          usageLimitReached: true,
-          used: usageCheck.used,
-          limit: usageCheck.limit,
-          planRequired: usageCheck.planRequired,
-        }, { status: 402 })
+    if (isQuiz) {
+      const usage = await checkUsage(userId, ip, "quiz")
+      if (!usage.allowed) {
+        return NextResponse.json(
+          {
+            error: usage.reason,
+            usageLimitReached: true,
+            used: usage.used,
+            limit: usage.limit,
+            planRequired: usage.planRequired,
+          },
+          { status: 402 }
+        )
       }
     }
 
     let content
+
     switch (type) {
       case "letters":
-        content = await generateLetterExamples(count, difficulty)
+        content = await generateLetterExamples(count)
         break
       case "three-letter-words":
-        content = await generateThreeLetterWords(count, difficulty)
+        content = await generateThreeLetterWords(count)
         break
       case "four-letter-words":
-        content = await generateFourLetterWords(count, difficulty)
+        content = await generateFourLetterWords(count)
         break
       case "five-letter-words":
-        content = await generateFiveLetterWords(count, difficulty)
+        content = await generateFiveLetterWords(count)
         break
       case "sentences":
-        content = await generateSimpleSentences(count, difficulty)
+        content = await generateSimpleSentences(count)
+        break
+      case "tracing":
+        content = await generateTracingItems(count)
+        break
+      case "matching":
+        content = await generateMatchingItems(count)
+        break
+      case "fill-blank":
+        content = await generateFillBlankItems(count)
         break
       case "quiz":
         content = await generatePhonicsQuiz(level || "letters", count)
-        break
-      case "tracing":
-        content = await generateTracingItems(count, difficulty)
-        break
-      case "matching":
-        content = await generateMatchingItems(count, difficulty)
-        break
-      case "fill-blank":
-        content = await generateFillBlankItems(count, difficulty)
         break
       default:
         return NextResponse.json({ error: "Invalid content type" }, { status: 400 })
     }
 
     // Increment usage after successful generation
-    if (WORKSHEET_TYPES.includes(type)) {
-      await incrementUsage(user.id, ip, "worksheets")
+    if (shouldCheckWorksheetQuota) {
+      await incrementUsage(userId, ip, "worksheets")
     }
-    if (QUIZ_TYPES.includes(type)) {
-      await incrementUsage(user.id, ip, "quiz")
+    if (isQuiz) {
+      await incrementUsage(userId, ip, "quiz")
     }
 
-    return NextResponse.json({ content })
+    return NextResponse.json({ content, success: true })
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Failed to generate content"
-    console.error("Error generating content:", message)
-    return NextResponse.json({ error: message }, { status: 500 })
+    console.error("Content generation error:", error)
+    // Fallback gracefully instead of failing
+    try {
+      const fallbackLetters = await generateLetterExamples(5)
+      return NextResponse.json({ content: fallbackLetters, success: true })
+    } catch {
+      return NextResponse.json({ error: "Could not generate content" }, { status: 500 })
+    }
   }
 }

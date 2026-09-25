@@ -18,11 +18,13 @@ export const PLANS: Record<PlanId, PlanInfo> = {
         emoji: "🌱",
         description: "Start your phonics journey",
         features: [
-            "Letter Sounds — unlimited",
-            "3 worksheet generations",
-            "3 AI quiz questions",
+            "All 26 Letter Sounds & Phonetics — unlimited",
+            "3, 4, & 5-Letter Word Builders — unlimited",
+            "Sentence Reading & Games — unlimited",
+            "Printable Practice Worksheets (3/day)",
+            "AI Phonics Quiz Challenge (3/day)",
         ],
-        color: "from-gray-400 to-gray-500",
+        color: "from-sky-400 to-blue-500",
     },
     study: {
         id: "study",
@@ -106,11 +108,11 @@ export const DAILY_LIMITS = { worksheets: 20, quiz: 30 }
 type Feature = "letters" | "three-letter-words" | "four-letter-words" | "five-letter-words" | "sentences" | "worksheets" | "quiz"
 
 const PLAN_FEATURES: Record<PlanId, Feature[]> = {
-    free: ["letters"],
-    study: ["letters", "three-letter-words", "four-letter-words", "five-letter-words", "sentences"],
-    worksheets: ["letters", "worksheets"],
-    quiz: ["letters", "quiz"],
-    worksheets_quiz: ["letters", "worksheets", "quiz"],
+    free: ["letters", "three-letter-words", "four-letter-words", "five-letter-words", "sentences", "worksheets", "quiz"],
+    study: ["letters", "three-letter-words", "four-letter-words", "five-letter-words", "sentences", "worksheets", "quiz"],
+    worksheets: ["letters", "three-letter-words", "four-letter-words", "five-letter-words", "sentences", "worksheets", "quiz"],
+    quiz: ["letters", "three-letter-words", "four-letter-words", "five-letter-words", "sentences", "worksheets", "quiz"],
+    worksheets_quiz: ["letters", "three-letter-words", "four-letter-words", "five-letter-words", "sentences", "worksheets", "quiz"],
     complete: ["letters", "three-letter-words", "four-letter-words", "five-letter-words", "sentences", "worksheets", "quiz"],
 }
 

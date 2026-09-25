@@ -5,8 +5,18 @@ const COOKIE_NAME = "phonics-session"
 
 // Auth routes: redirect to home if already logged in
 const AUTH_ROUTES = ["/login", "/signup"]
-// Open routes: accessible to everyone (logged in or not), no redirect
-const OPEN_ROUTES = ["/pricing"]
+// Open routes: accessible to everyone (kids, guests, parents) without forced login
+const OPEN_ROUTES = [
+    "/",
+    "/letters",
+    "/three-letter-words",
+    "/four-letter-words",
+    "/five-letter-words",
+    "/sentences",
+    "/quiz",
+    "/worksheets",
+    "/pricing",
+]
 const PUBLIC_API_ROUTES = ["/api/auth/login", "/api/auth/signup"]
 
 export function middleware(request: NextRequest) {
